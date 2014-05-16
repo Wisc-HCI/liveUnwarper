@@ -16,13 +16,16 @@
 using namespace std;
 using namespace cv;
 
+int panoramaDegrees = 360;
+
 // framerate stuff
 int currentFrameRate = 150;//125;
-int currentTrackingFrameRate = 225;//205;
+int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
+list<int> trackingRateList(200,1);
 int pastFailureCounter = 200;
-int successStreakCounter = 0;
-
+int pastTrackingFailureCounter = 200;
+int actualCounter = 0;
 
 // things to change based on camera
 //int radiusInner = 65, radiusOuter = 190; // 960x540 instantWebcam
@@ -32,12 +35,12 @@ int radiusInner = 50, radiusOuter = 190; // 1024x768 ipWebcam
 string templateFileName = "template960.jpg";
 //string templateFileName = "template1024.jpg";
 
-//int unwarpedW = 1440, unwarpedH = 360;
-int unwarpedW = 1440, unwarpedH = 300;
+int unwarpedW = 1300, unwarpedH = 240;
+//int unwarpedW = 1440, unwarpedH = 300;
 //int unwarpedW = 1140, unwarpedH = 200;
 //int unwarpedW = 770, unwarpedH = 180;
 
-int panoramaDegrees = 360;
+
 int leftBlack = 0;
 int rightBlack = unwarpedW;
 
@@ -106,6 +109,20 @@ int heuristicTurns;
 
 int leftX, rightX;
 
+bool trackingTraining = false;
+int trackingTrainingIterations = 0;
+
+void setUpTrackingTraining()
+{
+    trackingTraining = true;
+    tracking = true;
+    leftX = 0;
+    rightX = unwarpedW/2 + 2*trackingSliceWidth;
+    trackedImage = templ = imread("sampleTrackedImage.jpg");
+    detector.detect( trackedImage, keypoints_track );
+    extractor.compute( trackedImage, keypoints_track, descriptors_track );
+}
+
 string toString ( int Number )
 {
     ostringstream ss;
@@ -169,7 +186,20 @@ Mat unwarpSimple(Mat src, int *cx, int *cy)
     for ( int dsty = 0; dsty < unwarpedH; ++dsty )
     {
         float y = ( (float) dsty / (float) unwarpedH );
-        float yfrac = MIN( 1.0f, MAX( 0.0f, y ) );
+        /*
+         -6.8126940324309999e-003
+         1.4801742851070974e+000
+         -1.3996466911266976e+000
+         9.3309779408445981e-001
+         */
+        
+        //float yfrac = -.00681269403243 + 1.4801742851070974*y - 1.3996466911266976*y*y + .933097794084459*y*y*y;
+        
+        //float a = .185, b = .8184, c = -.0028;
+        float a = .0, b = 1.0, c = 0.0;
+        float yfrac = a*y*y + b*y + c;
+        //float yfrac = -.5 + sqrt(2*y + .25);
+        //float yfrac = MIN( 1.0f, MAX( 0.0f, y ) );
         
         float radius = yfrac * (radiusOuter-radiusInner) + radiusInner;
         
@@ -205,7 +235,7 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
     
     Rect area;
     
-    if((oldcx < 0 && oldcy < 0) || frameCount%100==0)
+    if((oldcx < 0 && oldcy < 0) || actualCounter%105==0)
     {
         // scan the whole frame
         remapCenterX = remapCenterY = 0;
@@ -342,12 +372,25 @@ static void onMouse(int event, int x, int y, int, void*)
     {
         if(!tracking && ( (x > leftBlack && x < leftViewNormalCamera) || (x > rightViewNormalCamera && x < rightBlack) ))
         {
-            cout << "X: " << x << "  Y: " << y << endl;
+            //cout << "X: " << x << "  Y: " << y << endl;
             tracking = true;
             setFrameRate(currentTrackingFrameRate);
+            
+            if(panoramaDegrees < 360)
+            {
+                if(rightBlack - x < trackingSliceWidth)
+                {
+                    x = rightBlack - trackingSliceWidth;
+                }
+                else if(x - leftBlack < trackingSliceWidth)
+                {
+                    x = leftBlack + trackingSliceWidth;
+                }
+            }
+            
             commandsGiven = 0;
             degreesFromCenter = (x - (unwarpedW/2))*360/unwarpedW;
-            cout << "offset: " << degreesFromCenter << endl;
+            //cout << "offset: " << degreesFromCenter << endl;
             heuristicTurns = abs((int)degreesFromCenter / 7);
             
             if(x >= trackingSliceWidth && x <= unwarpedW - trackingSliceWidth - 1)
@@ -384,14 +427,14 @@ static void onMouse(int event, int x, int y, int, void*)
                 // make mats, append them
                 Mat tmpL = thePanorama(arealeft).clone();
                 Mat tmpR = thePanorama(arearight).clone();
-                cout << tmpL.cols << ", " << tmpL.rows << "   " << tmpR.cols << ", " << tmpR.rows << endl;
-                cout << trackedImage.cols << ", " << trackedImage.rows << endl;
+                //cout << tmpL.cols << ", " << tmpL.rows << "   " << tmpR.cols << ", " << tmpR.rows << endl;
+                //cout << trackedImage.cols << ", " << trackedImage.rows << endl;
                 
                 //trackedImage.deallocate();
-                cout << "trackedImage type: " << trackedImage.type() << endl;
+                //cout << "trackedImage type: " << trackedImage.type() << endl;
                 if(trackedImage.type() != 16) cvtColor(trackedImage, trackedImage, CV_GRAY2BGR);
                 //trackedImage.convertTo(trackedImage, 16);
-                cout << "trackedImage type: " << trackedImage.type() << endl;
+                //cout << "trackedImage type: " << trackedImage.type() << endl;
                 
                 tmpL.copyTo(trackedImage(Rect(0, 0, tmpL.cols, tmpL.rows)));
                 tmpR.copyTo(trackedImage(Rect(tmpL.cols, 0, tmpR.cols, tmpR.rows)));
@@ -429,7 +472,7 @@ static void onMouse(int event, int x, int y, int, void*)
             // do stuff
             detector.detect( trackedImage, keypoints_track );
             extractor.compute( trackedImage, keypoints_track, descriptors_track );
-            cout << "keypoints in tracked image: " << keypoints_track.size() << " descriptors: " << descriptors_track.size() << endl;
+            //cout << "keypoints in tracked image: " << keypoints_track.size() << " descriptors: " << descriptors_track.size() << endl;
         }
     }
     else if(event == EVENT_RBUTTONDOWN)
@@ -442,7 +485,7 @@ void setFrameCount()
 {
     while(!frame.data) // go until we find the first valid image file so we know where to start the framecount
     {
-        frameCount += 15;
+        frameCount += 25;
         cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
         frame = imread(filepreamble + format(frameCount) + ".jpeg");
     }
@@ -460,9 +503,7 @@ void setup()
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     setFrameCount();
     
-    cout << "asdf" << endl;
     setFrameRate(currentFrameRate);
-    cout << "shoop" << endl;
     
     // window to show stream
     namedWindow(windowname, CV_WINDOW_AUTOSIZE);
@@ -479,6 +520,9 @@ void setup()
     leftViewNormalCamera = (unwarpedW/2.0) - normalCameraOffset;
     rightViewNormalCamera = (unwarpedW/2.0) + normalCameraOffset;
     
+    // set training for tracking to be true
+    setUpTrackingTraining();
+    
     // read in the template file
     templ = imread(templateFileName);
     if(!templ.data)
@@ -491,7 +535,7 @@ void setup()
 bool isValid(Mat m)
 {
     //cout << m.cols << " " << m.rows << endl;
-    return (m.cols == 960 && m.rows == 540) || (m.cols == 1024 && m.rows == 768);
+    return m.cols == 1024 && m.rows == 768;
 }
 
 int main()
@@ -502,54 +546,41 @@ int main()
     while(1337)
     {
         // read the current frame
-        /*
-         if(!camera.read(frame))
-         {
-         
-         cout << "ran out of frames!" << endl;
-         //break;
-         
-         // we may want to wait and then try to read again (if we are faster than the video stream)
-         
-         }*/
-        
         frame = imread(filepreamble + format(frameCount) + ".jpeg");
+        actualCounter++;
+        int past;
         
-        int past = rateList.back();
-        rateList.pop_back();
+        if(!tracking)
+        {
+            past = rateList.back();
+            rateList.pop_back();
+        }
+        else
+        {
+            past = trackingRateList.back();
+            trackingRateList.pop_back();
+        }
         
         if(isValid(frame))
         {
             // new framerate stuff
-            rateList.push_front(0);
-            if(past != 0)
+            if(!tracking)
             {
-                pastFailureCounter--;
+                rateList.push_front(0);
+                if(past != 0)
+                {
+                    pastFailureCounter--;
+                }
+            }
+            else
+            {
+                trackingRateList.push_front(0);
+                if(past != 0)
+                {
+                    pastTrackingFailureCounter--;
+                }
             }
             
-            
-            
-            /*
-            //cout << frameCount << endl;
-            successStreakCounter++;
-            
-            // updating frame rate
-            if(successStreakCounter > 10)
-            {
-                // slows down the sampling rate
-                if(tracking)
-                {
-                    currentTrackingFrameRate += 2; // TODO::: this should decrease??
-                    setFrameRate(currentTrackingFrameRate);
-                }
-                else
-                {
-                    currentFrameRate += 1;
-                    setFrameRate(currentFrameRate);
-                }
-                successStreakCounter = 0;
-            }
-            */
             // 1) estimate the center
             estimateCenterSteve(&cx, &cy, frame);
             
@@ -570,32 +601,26 @@ int main()
         else
         {
             // new framerate stuff
-            rateList.push_front(1);
-            if(past != 1)
+            if(!tracking)
             {
-                pastFailureCounter++;
+                rateList.push_front(1);
+                if(past != 1)
+                {
+                    pastFailureCounter++;
+                }
+            }
+            else
+            {
+                trackingRateList.push_front(1);
+                if(past != 1)
+                {
+                    pastTrackingFailureCounter++;
+                }
             }
             
             
             failCount++;
-            //cout << frameCount << " x" << endl;
-            /*failCount++;
-            successStreakCounter = 0;
             
-            if(failCount > 10)
-            {
-                if(tracking)
-                {
-                    currentTrackingFrameRate -= 1;
-                    setFrameRate(currentTrackingFrameRate);
-                }
-                else
-                {
-                    currentFrameRate -= 1;
-                    setFrameRate(currentFrameRate);
-                }
-            }
-            */
             if(failCount > 20)
             {
                 cout << "couldn't keep up with image processing, performing reset" << endl;
@@ -613,30 +638,49 @@ int main()
                     currentFrameRate += 1;
                     setFrameRate(currentFrameRate);
                 }
-                tracking = false;
+                if(!trackingTraining) tracking = false;
             }
         }
         
-        if(frameCount % 25 == 0)
+        if(actualCounter % 25 == 0)
         {
-            if(pastFailureCounter > 80)
+            if(!tracking)
             {
-                // we are waiting too often for new frames, should increase sample rate
-                currentFrameRate -= 1;
-                setFrameRate(currentFrameRate);
+                if(pastFailureCounter > 80)
+                {
+                    // we are waiting too often for new frames, should increase sample rate
+                    currentFrameRate -= 1;
+                    setFrameRate(currentFrameRate);
+                }
+                else if(pastFailureCounter < 50)
+                {
+                    // we are having trouble keeping up, decrease sample rate
+                    currentFrameRate += 1;
+                    setFrameRate(currentFrameRate);
+                }
+                //cout << pastFailureCounter << endl;
             }
-            else if(pastFailureCounter < 50)
+            else
             {
-                // we are having trouble keeping up, decrease sample rate
-                currentFrameRate += 1;
-                setFrameRate(currentFrameRate);
+                if(pastTrackingFailureCounter > 80)
+                {
+                    // we are waiting too often for new frames, should increase sample rate
+                    currentTrackingFrameRate -= 1;
+                    setFrameRate(currentTrackingFrameRate);
+                }
+                else if(pastTrackingFailureCounter < 50)
+                {
+                    // we are having trouble keeping up, decrease sample rate
+                    currentTrackingFrameRate += 1;
+                    setFrameRate(currentTrackingFrameRate);
+                }
+                //cout << pastTrackingFailureCounter << endl;
             }
-            cout << pastFailureCounter << endl;
         }
         
         if(tracking)
         {
-            if(frameCount%3 == 0)
+            if(actualCounter%3 == 0)
             {
                 //cout << "rightX: " << rightX << "  leftX: " << leftX << endl;
                 Rect area = Rect(leftX, 0, rightX-leftX, unwarpedH);
@@ -702,15 +746,15 @@ int main()
                 
                 // todo::: see if we can update to restrict the search space
                 /*if(degreesFromCenter < 0)
-                {
-                    //leftX = max(0, max(leftX, (int)(xAverage - trackingSliceWidth)));
-                    cout << "left" << endl;
-                }
-                else
-                {
-                    //rightX = min(unwarpedW, min(rightX, (int) (xAverage + trackingSliceWidth)));
-                    cout << "right" << endl;
-                }*/
+                 {
+                 //leftX = max(0, max(leftX, (int)(xAverage - trackingSliceWidth)));
+                 cout << "left" << endl;
+                 }
+                 else
+                 {
+                 //rightX = min(unwarpedW, min(rightX, (int) (xAverage + trackingSliceWidth)));
+                 cout << "right" << endl;
+                 }*/
                 
                 rectangle(thePanorama, Point(xAverage - trackingSliceWidth, 0), Point(xAverage + trackingSliceWidth, unwarpedH), Scalar::all(255));
                 
@@ -730,20 +774,26 @@ int main()
                 // TODO:: heuristics are off!
                 if((xAverage - (unwarpedW/2) < trackingThresh && (unwarpedW/2) - xAverage < trackingThresh) || commandsGiven > min(30, heuristicTurns+99))
                 {
-                    trackingTimesUnderThresh++;
-                    if(trackingTimesUnderThresh > 0)
+                    if(!trackingTraining)
                     {
-                        tracking = false; // we have turned toward the object!
-                        setFrameRate(currentFrameRate);
+                        trackingTimesUnderThresh++;
+                        if(trackingTimesUnderThresh > 0)
+                        {
+                            tracking = false; // we have turned toward the object!
+                            setFrameRate(currentFrameRate);
+                        }
+                        cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
                     }
-                    cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
                 }
                 else
                 {
                     trackingTimesUnderThresh = 0;
                     
                     // issue a turn command
-                    system((currentCommand + " &").c_str());
+                    if(!trackingTraining)
+                    {
+                        system((currentCommand + " &").c_str());
+                    }
                     commandsGiven++;
                 }
             }
@@ -752,6 +802,23 @@ int main()
                 xAverage += currentCommand==rightTurn ? -1 : 1;
                 //rectangle(thePanorama, Point(xAverage - trackingSliceWidth, 0), Point(xAverage + trackingSliceWidth, unwarpedH), Scalar(0, 255, 0));
                 //rectangle(thePanorama, Point(leftX, 0), Point(rightX, unwarpedH), Scalar(255,0,0));
+            }
+            if(trackingTraining)
+            {
+                trackingTrainingIterations++;
+                if (trackingTrainingIterations > 500)
+                {
+                    trackingTraining = false;
+                    cout << "finished training" << endl;
+                }
+                else
+                {
+                    tracking = true;
+                }
+                // draw a visual that we are still training
+                double percent = trackingTrainingIterations/500.0;
+                int yVal = percent * unwarpedH;
+                rectangle(thePanorama, Point(unwarpedW/2 - 30,0), Point(unwarpedW/2 + 30, yVal), Scalar(255,0,0), CV_FILLED, 8, 0);
             }
         }
         
