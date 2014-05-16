@@ -1,0 +1,41 @@
+make a calibration period for the setup phase for tracking frame rate calc
+
+
+
+$$$$
+1) make initial finding of frame number increase by 28's so we are right on the edge
+2) make the cfr start way too slow (be really big)
+3) fill up rateList with 200 fails (0's) (as if we're waiting forever), set rateTracker=0
+4) on each new frame:
+	int past = rateList.back();
+	rateList.pop_back();
+	if(success)
+	{
+		rateList.push_front(1);
+		if(past != 1)
+		{
+			rateTracker++;
+		}
+	}
+	else
+	{
+		rateList.push_front(0);
+		if(past != 0)
+		{
+			rateTracker--;
+		}
+	}
+
+5) if (frameCount%25 == 0)
+{
+	// do what's described below
+	// if(rateCount > 40) ...
+}
+
+track last 200, check every 25:
+> 40 fails, speed up sample rate -> decrease cfr
+< 15 fails, slow down sample rate -> increase cfr
+if(10 fails in row) hard reset + slow down sample rate (increase cfr)
+
+
+
