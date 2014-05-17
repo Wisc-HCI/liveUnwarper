@@ -13,6 +13,7 @@
 #include <thread>
 #include <opencv2/nonfree/nonfree.hpp>
 #include <list>
+#include <unistd.h>
 using namespace std;
 using namespace cv;
 
@@ -35,8 +36,8 @@ int radiusInner = 50, radiusOuter = 190; // 1024x768 ipWebcam
 string templateFileName = "template960.jpg";
 //string templateFileName = "template1024.jpg";
 
-int unwarpedW = 1300, unwarpedH = 240;
-//int unwarpedW = 1440, unwarpedH = 300;
+//int unwarpedW = 1300, unwarpedH = 240;
+int unwarpedW = 1440, unwarpedH = 240;
 //int unwarpedW = 1140, unwarpedH = 200;
 //int unwarpedW = 770, unwarpedH = 180;
 
@@ -134,7 +135,7 @@ void setFrameRate(int rate)
 {
     // sets delay for sampling of image stream
     system((frameRateCommand + toString(rate) + " &").c_str());
-    cout << "frame rate set to: " << rate << endl;
+    //cout << "frame rate set to: " << rate << endl;
 }
 
 string format(int i)
@@ -475,10 +476,10 @@ static void onMouse(int event, int x, int y, int, void*)
             //cout << "keypoints in tracked image: " << keypoints_track.size() << " descriptors: " << descriptors_track.size() << endl;
         }
     }
-    else if(event == EVENT_RBUTTONDOWN)
+    /*else if(event == EVENT_RBUTTONDOWN)
     {
         tmpdebug = true;
-    }
+    }*/
 }
 
 void setFrameCount()
@@ -486,7 +487,7 @@ void setFrameCount()
     while(!frame.data) // go until we find the first valid image file so we know where to start the framecount
     {
         frameCount += 25;
-        cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
+        //cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
         frame = imread(filepreamble + format(frameCount) + ".jpeg");
     }
 }
@@ -497,6 +498,15 @@ void setup()
     {
         cout << "debug is on." << endl;
     }
+    
+    // run video grabber
+    system("/usr/local/bin/node ../scripts/ZHIserver.js &");
+    
+    sleep(3);
+    
+    // run chrome
+    system("killall -9 \"Google Chrome\"");
+    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ &");
     
     // this is used if using imread() a ton
     frameCount = 0;
@@ -782,7 +792,7 @@ int main()
                             tracking = false; // we have turned toward the object!
                             setFrameRate(currentFrameRate);
                         }
-                        cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
+                        //cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
                     }
                 }
                 else
@@ -809,7 +819,7 @@ int main()
                 if (trackingTrainingIterations > 500)
                 {
                     trackingTraining = false;
-                    cout << "finished training" << endl;
+                    //cout << "finished training" << endl;
                 }
                 else
                 {

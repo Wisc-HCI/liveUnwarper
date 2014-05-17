@@ -1,28 +1,28 @@
 var net = require('net');
 var fs = require('fs');
 var http = require('http');
-var path = require('path');
 var express = require("express");
 
 var app = express();
 
 try
 {
-  deleteFolderRecursive(path.join("tmp", "unwarp"));
+console.log(__dirname + "/tmp/unwarp");
+  deleteFolderRecursive(__dirname + "/tmp/unwarp");
 }
 catch(ex){
 
 }
 
 //create files
-var exist = fs.existsSync("tmp");
+var exist = fs.existsSync(__dirname + "/tmp");
 if(!exist){
-  fs.mkdirSync("tmp");
+  fs.mkdirSync(__dirname + "/tmp");
 }
 else{
-  exist = fs.existsSync(path.join("tmp", "unwarp"));
+  exist = fs.existsSync(__dirname + "/tmp/unwarp");
   if(!exist){
-    fs.mkdirSync(path.join("tmp", "unwarp"));
+    fs.mkdirSync(__dirname + "/tmp/unwarp");
   }
 }
 
@@ -51,7 +51,7 @@ function saveJPG(){
         res.on('error',function(e){console.error(e)})
 
         res.on('end', function(){
-            fs.writeFile(path.join("tmp", "unwarp" , "image" + NumString(i) + ".jpeg"), data);
+            fs.writeFile(__dirname + "/tmp/unwarp/image" + NumString(i) + ".jpeg", data);
 
             if(i%100 == 0)
             {
@@ -61,7 +61,7 @@ function saveJPG(){
             {
                 try
                 {
-                  fs.unlink(path.join("tmp", "unwarp" , "image" + NumString(i - 30 - 1) + ".jpeg"),function(){});
+                  fs.unlink(__dirname + "/tmp/unwarp/image" + NumString(i - 30 - 1) + ".jpeg",function(){});
                 }
                 catch(ex)
                 {
