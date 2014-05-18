@@ -62,7 +62,7 @@ string frameRateCommand = "python ../scripts/frameRateChanger.py ";
 
 const double PI = 3.1415926535897932384626;
 
-string windowname = "Press Esc to Exit";
+string windowname = "Double";
 int failCount = 0;
 
 //CvCapture* camera;
@@ -340,35 +340,6 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
 
 static void onMouse(int event, int x, int y, int, void*)
 {
-    
-    /*
-     if(event == EVENT_LBUTTONDOWN && !drag)
-     {
-     // start dragging!
-     start = Point(x, y);
-     drag = true;
-     first = true;
-     }
-     else if(event == EVENT_MOUSEMOVE && drag)
-     {
-     // determine x change in mouseMovement
-     double frac = double(x-start.x) / (double)unwarpedW;
-     double radChange = frac * -2 * PI;
-     angularOffset += radChange;
-     start = Point(x,y);
-     }
-     else if(event == EVENT_LBUTTONUP && drag)
-     {
-     // done dragging!
-     drag = false;
-     cout << "left click down yo" << endl;
-     system("osascript ../leftMove.scpt");
-     }
-     if(event == EVENT_LBUTTONDBLCLK)
-     {
-     cout << "double-click detected. too bad this doesn't work." << endl;
-     }
-     */
     if(event == EVENT_LBUTTONDOWN)
     {
         if(!tracking && ( (x > leftBlack && x < leftViewNormalCamera) || (x > rightViewNormalCamera && x < rightBlack) ))
@@ -476,10 +447,6 @@ static void onMouse(int event, int x, int y, int, void*)
             //cout << "keypoints in tracked image: " << keypoints_track.size() << " descriptors: " << descriptors_track.size() << endl;
         }
     }
-    /*else if(event == EVENT_RBUTTONDOWN)
-    {
-        tmpdebug = true;
-    }*/
 }
 
 void setFrameCount()
@@ -487,7 +454,7 @@ void setFrameCount()
     while(!frame.data) // go until we find the first valid image file so we know where to start the framecount
     {
         frameCount += 25;
-        //cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
+        cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
         frame = imread(filepreamble + format(frameCount) + ".jpeg");
     }
 }
@@ -500,13 +467,16 @@ void setup()
     }
     
     // run video grabber
+    system("killall node");
     system("/usr/local/bin/node ../scripts/ZHIserver.js &");
     
     sleep(3);
     
     // run chrome
     system("killall -9 \"Google Chrome\"");
-    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ &");
+    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
+    
+    sleep(3);
     
     // this is used if using imread() a ton
     frameCount = 0;
@@ -518,6 +488,7 @@ void setup()
     // window to show stream
     namedWindow(windowname, CV_WINDOW_AUTOSIZE);
     setMouseCallback(windowname, onMouse);
+    moveWindow(windowname, 560, 0);
     
     // calculate the right edge of the left black section
     leftBlack = (unwarpedW/2) - ((unwarpedW*panoramaDegrees)/720.0);
