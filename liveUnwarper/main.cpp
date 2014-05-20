@@ -17,7 +17,9 @@
 using namespace std;
 using namespace cv;
 
-int panoramaDegrees = 360;
+//###########################################################
+int panoramaDegrees = 40; // 360, 180, or 40 !
+//###########################################################
 
 // framerate stuff
 int currentFrameRate = 150;//125;
@@ -54,7 +56,6 @@ VideoWriter gradientOut;
 
 Mat thePanorama;
 
-// scripts TODO ::: make sure this is the right directory (moved to scripts)
 string rightTurn = "osascript ../scripts/rightMove.scpt";
 string leftTurn = "osascript ../scripts/leftMove.scpt";
 string currentCommand = leftTurn;
@@ -363,7 +364,7 @@ static void onMouse(int event, int x, int y, int, void*)
             commandsGiven = 0;
             degreesFromCenter = (x - (unwarpedW/2))*360/unwarpedW;
             //cout << "offset: " << degreesFromCenter << endl;
-            heuristicTurns = abs((int)degreesFromCenter / 7);
+            heuristicTurns = abs((int)degreesFromCenter / 3.5);
             
             if(x >= trackingSliceWidth && x <= unwarpedW - trackingSliceWidth - 1)
             {
@@ -476,7 +477,7 @@ void setup()
     system("killall -9 \"Google Chrome\"");
     system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
     
-    sleep(3);
+    sleep(4);
     
     // this is used if using imread() a ton
     frameCount = 0;
@@ -502,7 +503,7 @@ void setup()
     rightViewNormalCamera = (unwarpedW/2.0) + normalCameraOffset;
     
     // set training for tracking to be true
-    setUpTrackingTraining();
+    if(panoramaDegrees > degreesOfNormalCamera) setUpTrackingTraining();
     
     // read in the template file
     templ = imread(templateFileName);
@@ -675,9 +676,12 @@ int main()
                 
                 if(keypoints_pano.size() == 0 || keypoints_track.size() < 5)
                 {
-                    cout << "this is probably going to cause issues:: " <<keypoints_pano.size() << " " << keypoints_track.size() << endl;
-                    tracking = false;
-                    continue;
+                    if(!trackingTraining)
+                    {
+                        cout << "this is probably going to cause issues:: " <<keypoints_pano.size() << " " << keypoints_track.size() << endl;
+                        tracking = false;
+                        continue;
+                    }
                 }
                 
                 // 3) matching descriptor vectors using flann matcher
@@ -753,7 +757,7 @@ int main()
                 //cout << "distance from xAverage to center: " << abs(xAverage - (unwarpedW/2)) << " thresh: " << trackingThresh <<endl;
                 
                 // TODO:: heuristics are off!
-                if((xAverage - (unwarpedW/2) < trackingThresh && (unwarpedW/2) - xAverage < trackingThresh) || commandsGiven > min(30, heuristicTurns+99))
+                if((xAverage - (unwarpedW/2) < trackingThresh && (unwarpedW/2) - xAverage < trackingThresh) || commandsGiven > min(45, heuristicTurns))
                 {
                     if(!trackingTraining)
                     {
@@ -763,7 +767,7 @@ int main()
                             tracking = false; // we have turned toward the object!
                             setFrameRate(currentFrameRate);
                         }
-                        //cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
+                        cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
                     }
                 }
                 else
@@ -790,7 +794,8 @@ int main()
                 if (trackingTrainingIterations > 500)
                 {
                     trackingTraining = false;
-                    //cout << "finished training" << endl;
+                    tracking = false;
+                    cout << "finished training" << endl;
                 }
                 else
                 {
@@ -798,19 +803,23 @@ int main()
                 }
                 // draw a visual that we are still training
                 double percent = trackingTrainingIterations/500.0;
-                int yVal = percent * unwarpedH;
-                rectangle(thePanorama, Point(unwarpedW/2 - 30,0), Point(unwarpedW/2 + 30, yVal), Scalar(255,0,0), CV_FILLED, 8, 0);
+                int xVal = percent * unwarpedW;
+                rectangle(thePanorama, Point(0,0), Point(unwarpedW,unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
+                rectangle(thePanorama, Point(0,0), Point(xVal, unwarpedH), Scalar(255,0,0), CV_FILLED, 8, 0);
             }
         }
         
         // draw black field of view bars
-        line(thePanorama, Point(leftViewNormalCamera, 0), Point(leftViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
-        line(thePanorama, Point(rightViewNormalCamera, 0), Point(rightViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
-        
-        // blacken out the unwanted sections of panorama
-        rectangle(thePanorama, Point(0,0), Point(leftBlack, unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
-        rectangle(thePanorama, Point(rightBlack,0), Point(unwarpedW,unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
-        
+        if(!trackingTraining)
+        {
+            line(thePanorama, Point(leftViewNormalCamera, 0), Point(leftViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
+            line(thePanorama, Point(rightViewNormalCamera, 0), Point(rightViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
+            
+            
+            // blacken out the unwanted sections of panorama
+            rectangle(thePanorama, Point(0,0), Point(leftBlack, unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
+            rectangle(thePanorama, Point(rightBlack,0), Point(unwarpedW,unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
+        }
         
         
         
