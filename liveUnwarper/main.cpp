@@ -2,27 +2,29 @@
 //  main.cpp
 //  liveUnwarper
 //
-//  Created by steven on 4/12/14.
-//  Copyright (c) 2014 what. All rights reserved.
+//  Created by ------ on -/--/--.
 //
 
 #include <iostream>
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 #include <stdio.h>
-#include <thread>
 #include <opencv2/nonfree/nonfree.hpp>
 #include <list>
 #include <unistd.h>
 using namespace std;
 using namespace cv;
 
+
 //###########################################################
-int panoramaDegrees = 40; // 360, 180, or 40 !
+int panoramaDegrees = 360        ; // 360, 180, or 40 !
 //###########################################################
 
+
+
+
 // framerate stuff
-int currentFrameRate = 150;//125;
+int currentFrameRate = 180;//125;
 int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
 list<int> trackingRateList(200,1);
@@ -603,7 +605,7 @@ int main()
             
             failCount++;
             
-            if(failCount > 20)
+            if(failCount > 30)
             {
                 cout << "couldn't keep up with image processing, performing reset" << endl;
                 frameCount -= 30;
@@ -624,23 +626,26 @@ int main()
             }
         }
         
-        if(actualCounter % 25 == 0)
+        if(actualCounter % 150 == 0)
         {
             if(!tracking)
             {
+                cout << "past failure counter: " << pastFailureCounter << endl;
                 if(pastFailureCounter > 80)
                 {
                     // we are waiting too often for new frames, should increase sample rate
                     currentFrameRate -= 1;
                     setFrameRate(currentFrameRate);
                 }
-                else if(pastFailureCounter < 50)
+                else if(pastFailureCounter < 60)
                 {
                     // we are having trouble keeping up, decrease sample rate
                     currentFrameRate += 1;
                     setFrameRate(currentFrameRate);
                 }
                 //cout << pastFailureCounter << endl;
+                
+                // we care about the CHANGE in the pastFailureCounter (if the change is
             }
             else
             {
