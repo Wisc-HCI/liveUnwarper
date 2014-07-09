@@ -12,6 +12,9 @@
 #include <opencv2/nonfree/nonfree.hpp>
 #include <list>
 #include <unistd.h>
+#include <GLUT/GLUT.h>
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
 using namespace std;
 using namespace cv;
 
@@ -24,7 +27,7 @@ int panoramaDegrees = 360        ; // 360, 180, or 40 !
 
 
 // framerate stuff
-int currentFrameRate = 180;//125;
+int currentFrameRate = 100;//180;//125;
 int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
 list<int> trackingRateList(200,1);
@@ -116,15 +119,70 @@ int leftX, rightX;
 bool trackingTraining = false;
 int trackingTrainingIterations = 0;
 
-void setUpTrackingTraining()
+typedef struct {
+    int id;
+    int width;
+	int height;
+	char* title;
+    
+	float field_of_view_angle;
+	float z_near;
+	float z_far;
+} glutWindow;
+
+glutWindow win;
+glutWindow win2;
+
+// Function turn a cv::Mat into a texture, and return the texture ID as a GLuint for use
+GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wrapFilter)
 {
-    trackingTraining = true;
-    tracking = true;
-    leftX = 0;
-    rightX = unwarpedW/2 + 2*trackingSliceWidth;
-    trackedImage = templ = imread("sampleTrackedImage.jpg");
-    detector.detect( trackedImage, keypoints_track );
-    extractor.compute( trackedImage, keypoints_track, descriptors_track );
+	// Generate a number for our textureID's unique handle
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+    
+	// Bind to our texture handle
+	glBindTexture(GL_TEXTURE_2D, textureID);
+    
+	// Catch silly-mistake texture interpolation method for magnification
+	if (magFilter == GL_LINEAR_MIPMAP_LINEAR  ||
+	    magFilter == GL_LINEAR_MIPMAP_NEAREST ||
+	    magFilter == GL_NEAREST_MIPMAP_LINEAR ||
+	    magFilter == GL_NEAREST_MIPMAP_NEAREST)
+	{
+		cout << "You can't use MIPMAPs for magnification - setting filter to GL_LINEAR" << endl;
+		magFilter = GL_LINEAR;
+	}
+    
+	// Set texture interpolation methods for minification and magnification
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    
+	// Set texture clamping method
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapFilter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapFilter);
+    
+	// Set incoming texture format to:
+	// GL_BGR       for CV_CAP_OPENNI_BGR_IMAGE,
+	// GL_LUMINANCE for CV_CAP_OPENNI_DISPARITY_MAP,
+	// Work out other mappings as required ( there's a list in comments in main() )
+	GLenum inputColourFormat = GL_BGR;
+	if (mat.channels() == 1)
+	{
+		inputColourFormat = GL_LUMINANCE;
+	}
+    
+	// Create the texture
+	glTexImage2D(GL_TEXTURE_2D,     // Type of texture
+	             0,                 // Pyramid level (for mip-mapping) - 0 is the top level
+	             GL_RGB,            // Internal colour format to convert to
+	             mat.cols,          // Image width  i.e. 640 for Kinect in standard mode
+	             mat.rows,          // Image height i.e. 480 for Kinect in standard mode
+	             0,                 // Border width in pixels (can either be 1 or 0)
+	             inputColourFormat, // Input image format (i.e. GL_RGB, GL_RGBA, GL_BGR etc.)
+	             GL_UNSIGNED_BYTE,  // Image data type
+	             mat.ptr());        // The actual image data itself
+    
+	return textureID;
 }
 
 string toString ( int Number )
@@ -341,117 +399,6 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
     return;
 }
 
-static void onMouse(int event, int x, int y, int, void*)
-{
-    if(event == EVENT_LBUTTONDOWN)
-    {
-        if(!tracking && ( (x > leftBlack && x < leftViewNormalCamera) || (x > rightViewNormalCamera && x < rightBlack) ))
-        {
-            //cout << "X: " << x << "  Y: " << y << endl;
-            tracking = true;
-            setFrameRate(currentTrackingFrameRate);
-            
-            if(panoramaDegrees < 360)
-            {
-                if(rightBlack - x < trackingSliceWidth)
-                {
-                    x = rightBlack - trackingSliceWidth;
-                }
-                else if(x - leftBlack < trackingSliceWidth)
-                {
-                    x = leftBlack + trackingSliceWidth;
-                }
-            }
-            
-            commandsGiven = 0;
-            degreesFromCenter = (x - (unwarpedW/2))*360/unwarpedW;
-            //cout << "offset: " << degreesFromCenter << endl;
-            heuristicTurns = abs((int)degreesFromCenter / 3.5);
-            
-            if(x >= trackingSliceWidth && x <= unwarpedW - trackingSliceWidth - 1)
-            {
-                // we can just grab the area of the slice normally
-                cout << "normal template condition." << endl;
-                Rect area = Rect(x - trackingSliceWidth, 0, 2 * trackingSliceWidth, unwarpedH);
-                
-                trackedImage = thePanorama(area).clone();
-                cvtColor(trackedImage, trackedImage, COLOR_RGB2GRAY);
-                
-                //if(debug)
-                {
-                    imwrite("trackedImage.jpg", trackedImage);
-                }
-            }
-            else
-            {
-                // we'll need to stitch together two sides of the panorama to get the template image
-                cout << "stitching template condition. " << x << ", " << y << endl;
-                Rect arealeft;
-                Rect arearight;
-                if(x < trackingSliceWidth)
-                {
-                    arealeft = Rect(unwarpedW + (x - trackingSliceWidth), 0, trackingSliceWidth - x, unwarpedH);
-                    arearight = Rect(0, 0, x + trackingSliceWidth, unwarpedH);
-                }
-                else
-                {
-                    arealeft = Rect( x - trackingSliceWidth, 0, unwarpedW - (x - trackingSliceWidth), unwarpedH);
-                    arearight = Rect(0, 0, (2 * trackingSliceWidth) - (unwarpedW - (x - trackingSliceWidth)), unwarpedH);
-                }
-                
-                // make mats, append them
-                Mat tmpL = thePanorama(arealeft).clone();
-                Mat tmpR = thePanorama(arearight).clone();
-                //cout << tmpL.cols << ", " << tmpL.rows << "   " << tmpR.cols << ", " << tmpR.rows << endl;
-                //cout << trackedImage.cols << ", " << trackedImage.rows << endl;
-                
-                //trackedImage.deallocate();
-                //cout << "trackedImage type: " << trackedImage.type() << endl;
-                if(trackedImage.type() != 16) cvtColor(trackedImage, trackedImage, CV_GRAY2BGR);
-                //trackedImage.convertTo(trackedImage, 16);
-                //cout << "trackedImage type: " << trackedImage.type() << endl;
-                
-                tmpL.copyTo(trackedImage(Rect(0, 0, tmpL.cols, tmpL.rows)));
-                tmpR.copyTo(trackedImage(Rect(tmpL.cols, 0, tmpR.cols, tmpR.rows)));
-                
-                cvtColor(trackedImage, trackedImage, COLOR_RGB2GRAY);
-                
-                if(debug)
-                {
-                    imwrite("trackedImage.jpg", trackedImage);
-                }
-            }
-            if(debug)
-            {
-                cout << "trackedImage dimensions" << trackedImage.cols << ", " << trackedImage.rows << endl;
-            }
-            
-            if(degreesFromCenter > 0)
-            {
-                leftX = unwarpedW/2 - 2*trackingSliceWidth;
-                rightX = min(unwarpedW, x + 2*trackingSliceWidth);
-                currentCommand = rightTurn;
-            }
-            else if(degreesFromCenter < 0)
-            {
-                currentCommand = leftTurn;
-                leftX = max(0, x-2*trackingSliceWidth);
-                rightX = unwarpedW/2 + 2*trackingSliceWidth;
-            }
-            else
-            {
-                tracking = false;
-                cout << "zero degree turn" << endl;
-            }
-            
-            // do stuff
-            detector.detect( trackedImage, keypoints_track );
-            extractor.compute( trackedImage, keypoints_track, descriptors_track );
-            //cout << "keypoints in tracked image: " << keypoints_track.size() << " descriptors: " << descriptors_track.size() << endl;
-        }
-    }
-}
-
 void setFrameCount()
 {
     while(!frame.data) // go until we find the first valid image file so we know where to start the framecount
@@ -468,27 +415,31 @@ void setup()
     {
         cout << "debug is on." << endl;
     }
-    
+    // TODO ::: uncomment below for actual running, this kills chrome and node
     // run video grabber
     system("killall node");
     system("/usr/local/bin/node ../scripts/ZHIserver.js &");
     
     sleep(3);
-    
+    /*
     // run chrome
     system("killall -9 \"Google Chrome\"");
     system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
     
-    sleep(4);
+    sleep(4);*/
     
     // this is used if using imread() a ton
-    frameCount = 0;
+    frameCount = -10;
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     setFrameCount();
+    cout << "just set frame count" << endl;
+    setFrameCount();
+    cout << "set it again.." << endl;
     
     setFrameRate(currentFrameRate);
     
     // window to show stream
+    /*
     namedWindow(windowname, CV_WINDOW_AUTOSIZE);
     setMouseCallback(windowname, onMouse);
     moveWindow(windowname, 560, 0);
@@ -506,7 +457,7 @@ void setup()
     
     // set training for tracking to be true
     if(panoramaDegrees > degreesOfNormalCamera) setUpTrackingTraining();
-    
+    */
     // read in the template file
     templ = imread(templateFileName);
     if(!templ.data)
@@ -516,324 +467,272 @@ void setup()
     }
 }
 
+float degreesOfRobotFOV = 40.0;
+float x = 3.7;
+float y = 3.0;//5.0;
+float zDist = 0;
+
+void displayLeft()
+{
+    GLfloat aspect = (GLfloat) win.width / win.height;
+	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);		// set up a perspective projection matrix
+    
+    gluLookAt(0.0, 0.0, 5.00,  /* eye is at (0,0,5) */
+              0.0, 0.0, 0.0,      /* center is at (0,0,0) */
+              0.0, 1.0, 0.0);     /* up is in positive Y direction */
+    
+    glMatrixMode(GL_PROJECTION);												// select projection matrix
+    
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);		     // Clear Screen and Depth Buffer
+	glLoadIdentity();
+    
+    // Convert to texture
+	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP);
+    
+    // Bind texture
+	glBindTexture(GL_TEXTURE_2D, tex);
+    
+    glBegin(GL_QUAD_STRIP);
+    
+    
+    
+    float leftXCoord = 1-(((panoramaDegrees/2.0)/360.0) + .5);
+    float rightXCoord = (-degreesOfRobotFOV/720.0 + .5);
+    
+    cout << leftXCoord << " " << rightXCoord << endl;
+    
+    glTexCoord2f(leftXCoord,0.0);
+    glVertex3f(-x,y,zDist);
+    glTexCoord2f(leftXCoord,1.0);
+    glVertex3f(-x,-y,zDist);
+    // center panel
+    //glTexCoord2f(0.0,1.0);
+    glTexCoord2f(rightXCoord, 0.0);
+    glVertex3f(x,y,zDist);
+    glTexCoord2f(rightXCoord, 1.0);
+    glVertex3f(x,-y,zDist);
+    
+    glEnd();
+    
+    // Free the texture memory
+	glDeleteTextures(1, &tex);
+    
+    glutSwapBuffers();
+}
+
+void displayRight()
+{
+    GLfloat aspect = (GLfloat) win.width / win.height;
+	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);		// set up a perspective projection matrix
+    
+    gluLookAt(0.0, 0.0, 5.00,  /* eye is at (0,0,5) */
+              0.0, 0.0, 0.0,      /* center is at (0,0,0) */
+              0.0, 1.0, 0.0);     /* up is in positive Y direction */
+    
+    glMatrixMode(GL_PROJECTION);												// select projection matrix
+    
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);		     // Clear Screen and Depth Buffer
+	glLoadIdentity();
+    
+    // Convert to texture
+	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP);
+    
+    // Bind texture
+	glBindTexture(GL_TEXTURE_2D, tex);
+    
+    glBegin(GL_QUAD_STRIP);
+    
+    float leftXCoord = (degreesOfRobotFOV/720.0 + .5);
+    float rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
+    
+    cout << leftXCoord << " " << rightXCoord << endl;
+    
+    glTexCoord2f(leftXCoord,0.0);
+    glVertex3f(-x,y,zDist);
+    glTexCoord2f(leftXCoord,1.0);
+    glVertex3f(-x,-y,zDist);
+    // center panel
+    //glTexCoord2f(0.0,1.0);
+    glTexCoord2f(rightXCoord, 0.0);
+    glVertex3f(x,y,zDist);
+    glTexCoord2f(rightXCoord, 1.0);
+    glVertex3f(x,-y,zDist);
+    
+    glEnd();
+    
+    // Free the texture memory
+	glDeleteTextures(1, &tex);
+    
+    glutSwapBuffers();
+}
+
+#define KEY_ESCAPE 27
+
+void keyboard ( unsigned char key, int mousePositionX, int mousePositionY )
+{
+    switch ( key )
+    {
+        case KEY_ESCAPE:
+            exit ( 0 );
+            break;
+        default:
+            break;
+    }
+}
+
+void initialize()
+{
+    glEnable( GL_DEPTH_TEST );
+    glEnable(GL_TEXTURE_2D);
+    glDepthFunc( GL_LEQUAL );
+    glHint( GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST );						// specify implementation-specific hints
+	glClearColor(0.0, 0.0, 0.0, 1.0);											// specify clear values for the color buffers
+}
+
 bool isValid(Mat m)
 {
     //cout << m.cols << " " << m.rows << endl;
     return m.cols == 1024 && m.rows == 768;
 }
 
-int main()
+void refresher()
+{
+    // read the current frame
+    frame = imread(filepreamble + format(frameCount) + ".jpeg");
+    actualCounter++;
+    
+    int past = rateList.back();
+    rateList.pop_back();
+    
+    cout << "framecount " << frameCount << endl;
+    
+    if(isValid(frame))
+    {
+        //cout << "valid frame." << endl;
+        // new framerate stuff
+        rateList.push_front(0);
+        if(past != 0)
+        {
+            pastFailureCounter--;
+        }
+        
+        // 1) estimate the center
+        estimateCenterSteve(&cx, &cy, frame);
+        
+        // 1.5) recalculate the center if our values are strange
+        if(cx < frame.cols/5 || cx > 4*frame.cols/5)
+        {
+            cout << "unusual center detected. performing full center recalculation. " << cx << " " << cy << endl;
+            cx = -1; cy = -1;
+            estimateCenterSteve(&cx, &cy, frame);
+        }
+        
+        // 2) unwarp the frame
+        thePanorama = unwarpSimple(frame, &cx, &cy);
+        
+        frameCount++;
+        failCount = 0;
+        glutSetWindow(win.id);
+        glutPostRedisplay();
+        glutSetWindow(win2.id);
+        glutPostRedisplay();
+    }
+    else
+    {
+        //cout << "invalid frame." << endl;
+        // new framerate stuff
+        rateList.push_front(1);
+        if(past != 1)
+        {
+            pastFailureCounter++;
+        }
+        
+        failCount++;
+        
+        if(failCount > 80000)
+        {
+            cout << "couldn't keep up with image processing, performing reset" << endl;
+            frameCount -= 30;
+            setFrameCount();
+            failCount = 0;
+            
+            currentFrameRate += 1;
+            setFrameRate(currentFrameRate);
+        }
+    }
+    /*
+    if(actualCounter % 150 == 0)
+    {
+            cout << "past failure counter: " << pastFailureCounter << endl;
+            if(pastFailureCounter > 80)
+            {
+                // we are waiting too often for new frames, should increase sample rate
+                currentFrameRate -= 1;
+                setFrameRate(currentFrameRate);
+            }
+            else if(pastFailureCounter < 60)
+            {
+                // we are having trouble keeping up, decrease sample rate
+                currentFrameRate += 1;
+                setFrameRate(currentFrameRate);
+            }
+            //cout << pastFailureCounter << endl;
+            
+            // we care about the CHANGE in the pastFailureCounter (if the change is
+        
+    }*/
+    //if(thePanorama.rows > 0 && thePanorama.cols > 0) imshow(windowname, thePanorama);
+    //cout << "ran refresher: " << isValid(thePanorama) << endl;
+}
+
+
+void setupOpenGL(int argc, char **argv)
+{
+    int offset = 45; // offset from top of screen
+	// initialize and run program
+	glutInit(&argc, argv);                                      // GLUT initialization
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );  // Display Mode
+    
+    win.width = 607;
+    win.height = 1440 - offset; // make this roughly the height of the monitor
+    win.title = "Double";
+    win.field_of_view_angle = 120;
+    win.z_near = 0.1f;
+    win.z_far = 500.0f;
+    
+    glutInitWindowSize(win.width,win.height);					// set window size
+    win.id = glutCreateWindow(win.title);								// create Window
+    glutPositionWindow(0,offset);
+    glutDisplayFunc(displayLeft);									// register Display Function
+    glutKeyboardFunc(keyboard);                                // register Keyboard Handler
+    
+    initialize();
+    
+    win2.width = win.width;
+    win2.height = win.height; // make this roughly the height of the monitor
+    win2.title = "Double";
+    win2.field_of_view_angle = win.field_of_view_angle;
+    win2.z_near = win.z_near;
+    win2.z_far = win.z_far;
+    
+    win2.id = glutCreateWindow(win2.title);
+    glutPositionWindow(2560 - win2.width, offset); // 1440 is screen resolution x
+    glutDisplayFunc(displayRight);
+    glutKeyboardFunc(keyboard);
+    glutIdleFunc(refresher);
+    
+    initialize();
+}
+
+
+
+int main(int argc, char **argv)
 {
     setup();
     cx = -1; cy = -1;
-    
-    while(1337)
-    {
-        // read the current frame
-        frame = imread(filepreamble + format(frameCount) + ".jpeg");
-        actualCounter++;
-        int past;
-        
-        if(!tracking)
-        {
-            past = rateList.back();
-            rateList.pop_back();
-        }
-        else
-        {
-            past = trackingRateList.back();
-            trackingRateList.pop_back();
-        }
-        
-        if(isValid(frame))
-        {
-            // new framerate stuff
-            if(!tracking)
-            {
-                rateList.push_front(0);
-                if(past != 0)
-                {
-                    pastFailureCounter--;
-                }
-            }
-            else
-            {
-                trackingRateList.push_front(0);
-                if(past != 0)
-                {
-                    pastTrackingFailureCounter--;
-                }
-            }
-            
-            // 1) estimate the center
-            estimateCenterSteve(&cx, &cy, frame);
-            
-            // 1.5) recalculate the center if our values are strange
-            if(cx < frame.cols/5 || cx > 4*frame.cols/5)
-            {
-                cout << "unusual center detected. performing full center recalculation. " << cx << " " << cy << endl;
-                cx = -1; cy = -1;
-                estimateCenterSteve(&cx, &cy, frame);
-            }
-            
-            // 2) unwarp the frame
-            thePanorama = unwarpSimple(frame, &cx, &cy);
-            
-            frameCount++;
-            failCount = 0;
-        }
-        else
-        {
-            // new framerate stuff
-            if(!tracking)
-            {
-                rateList.push_front(1);
-                if(past != 1)
-                {
-                    pastFailureCounter++;
-                }
-            }
-            else
-            {
-                trackingRateList.push_front(1);
-                if(past != 1)
-                {
-                    pastTrackingFailureCounter++;
-                }
-            }
-            
-            
-            failCount++;
-            
-            if(failCount > 30)
-            {
-                cout << "couldn't keep up with image processing, performing reset" << endl;
-                frameCount -= 30;
-                setFrameCount();
-                failCount = 0;
-                
-                if(tracking)
-                {
-                    currentTrackingFrameRate += 1;
-                    setFrameRate(currentTrackingFrameRate);
-                }
-                else
-                {
-                    currentFrameRate += 1;
-                    setFrameRate(currentFrameRate);
-                }
-                if(!trackingTraining) tracking = false;
-            }
-        }
-        
-        if(actualCounter % 150 == 0)
-        {
-            if(!tracking)
-            {
-                cout << "past failure counter: " << pastFailureCounter << endl;
-                if(pastFailureCounter > 80)
-                {
-                    // we are waiting too often for new frames, should increase sample rate
-                    currentFrameRate -= 1;
-                    setFrameRate(currentFrameRate);
-                }
-                else if(pastFailureCounter < 60)
-                {
-                    // we are having trouble keeping up, decrease sample rate
-                    currentFrameRate += 1;
-                    setFrameRate(currentFrameRate);
-                }
-                //cout << pastFailureCounter << endl;
-                
-                // we care about the CHANGE in the pastFailureCounter (if the change is
-            }
-            else
-            {
-                if(pastTrackingFailureCounter > 80)
-                {
-                    // we are waiting too often for new frames, should increase sample rate
-                    currentTrackingFrameRate -= 1;
-                    setFrameRate(currentTrackingFrameRate);
-                }
-                else if(pastTrackingFailureCounter < 50)
-                {
-                    // we are having trouble keeping up, decrease sample rate
-                    currentTrackingFrameRate += 1;
-                    setFrameRate(currentTrackingFrameRate);
-                }
-                //cout << pastTrackingFailureCounter << endl;
-            }
-        }
-        
-        if(tracking)
-        {
-            if(actualCounter%3 == 0)
-            {
-                //cout << "rightX: " << rightX << "  leftX: " << leftX << endl;
-                Rect area = Rect(leftX, 0, rightX-leftX, unwarpedH);
-                Mat centerOfPanorama = thePanorama(area).clone();
-                
-                // 1) detect keypoints
-                detector.detect(centerOfPanorama, keypoints_pano);
-                
-                // 2) calculate descriptors (feature vectors)
-                extractor.compute(centerOfPanorama, keypoints_pano, descriptors_pano);
-                
-                if(keypoints_pano.size() == 0 || keypoints_track.size() < 5)
-                {
-                    if(!trackingTraining)
-                    {
-                        cout << "this is probably going to cause issues:: " <<keypoints_pano.size() << " " << keypoints_track.size() << endl;
-                        tracking = false;
-                        continue;
-                    }
-                }
-                
-                // 3) matching descriptor vectors using flann matcher
-                matcher.match( descriptors_pano, descriptors_track, matches );
-                
-                double min_dist = 100;
-                
-                // calculation of max and min distances between keypoints
-                for( int i = 0; i < descriptors_pano.rows; i++ )
-                {
-                    double dist = matches[i].distance;
-                    if( dist < min_dist ) min_dist = dist;
-                }
-                //cout << "min dist: " << min_dist << endl;
-                
-                //printf("-- Min dist : %f \n", min_dist );
-                
-                //-- Draw only "good" matches (i.e. whose distance is less than 2*min_dist,
-                //-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
-                //-- small)
-                //-- PS.- radiusMatch can also be used here.
-                std::vector< DMatch > good_matches;
-                
-                for( int i = 0; i < descriptors_pano.rows; i++ )
-                {
-                    if(matches[i].distance <= max(2 * min_dist, 0.02))
-                    {
-                        good_matches.push_back( matches[i]);
-                    }
-                }
-                
-                // draw only "good" matches
-                //Mat img_matches;
-                //drawMatches( centerOfPanorama, keypoints_1, trackedImage, keypoints_2, good_matches, img_matches, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
-                
-                xAverage = 0.0;
-                for(int i = 0; i < good_matches.size(); i++)
-                {
-                    //cout << keypoints_1[i].pt << endl;
-                    //cout << good_matches[i].queryIdx << endl; // i think this is it
-                    //cout << keypoints_1[good_matches[i].queryIdx].pt << endl;
-                    xAverage += keypoints_pano[good_matches[i].queryIdx].pt.x;
-                }
-                xAverage /= good_matches.size();
-                xAverage += leftX; // translate back to the full panorama's coord system
-                //cout << "xAverage: " << xAverage << endl;
-                
-                // todo::: see if we can update to restrict the search space
-                /*if(degreesFromCenter < 0)
-                 {
-                 //leftX = max(0, max(leftX, (int)(xAverage - trackingSliceWidth)));
-                 cout << "left" << endl;
-                 }
-                 else
-                 {
-                 //rightX = min(unwarpedW, min(rightX, (int) (xAverage + trackingSliceWidth)));
-                 cout << "right" << endl;
-                 }*/
-                
-                rectangle(thePanorama, Point(xAverage - trackingSliceWidth, 0), Point(xAverage + trackingSliceWidth, unwarpedH), Scalar::all(255));
-                
-                //rectangle(thePanorama, Point(leftX, 0), Point(rightX, unwarpedH), Scalar(255,0,0));
-                
-                
-                /*for( int i = 0; i < (int)good_matches.size(); i++ )
-                 {
-                 printf( "-- Good Match [%d] Keypoint 1: %d  -- Keypoint 2: %d  \n", i, good_matches[i].queryIdx, good_matches[i].trainIdx );
-                 }*/
-                
-                //-- Show detected matches
-                //imwrite("matchesFile.jpg", img_matches);
-                
-                //cout << "distance from xAverage to center: " << abs(xAverage - (unwarpedW/2)) << " thresh: " << trackingThresh <<endl;
-                
-                // TODO:: heuristics are off!
-                if((xAverage - (unwarpedW/2) < trackingThresh && (unwarpedW/2) - xAverage < trackingThresh) || commandsGiven > min(45, heuristicTurns))
-                {
-                    if(!trackingTraining)
-                    {
-                        trackingTimesUnderThresh++;
-                        if(trackingTimesUnderThresh > 0)
-                        {
-                            tracking = false; // we have turned toward the object!
-                            setFrameRate(currentFrameRate);
-                        }
-                        cout << "found it! " << commandsGiven << " commands used, predicted: " << heuristicTurns << endl;
-                    }
-                }
-                else
-                {
-                    trackingTimesUnderThresh = 0;
-                    
-                    // issue a turn command
-                    if(!trackingTraining)
-                    {
-                        system((currentCommand + " &").c_str());
-                    }
-                    commandsGiven++;
-                }
-            }
-            else
-            {
-                xAverage += currentCommand==rightTurn ? -1 : 1;
-                //rectangle(thePanorama, Point(xAverage - trackingSliceWidth, 0), Point(xAverage + trackingSliceWidth, unwarpedH), Scalar(0, 255, 0));
-                //rectangle(thePanorama, Point(leftX, 0), Point(rightX, unwarpedH), Scalar(255,0,0));
-            }
-            if(trackingTraining)
-            {
-                trackingTrainingIterations++;
-                if (trackingTrainingIterations > 500)
-                {
-                    trackingTraining = false;
-                    tracking = false;
-                    cout << "finished training" << endl;
-                }
-                else
-                {
-                    tracking = true;
-                }
-                // draw a visual that we are still training
-                double percent = trackingTrainingIterations/500.0;
-                int xVal = percent * unwarpedW;
-                rectangle(thePanorama, Point(0,0), Point(unwarpedW,unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
-                rectangle(thePanorama, Point(0,0), Point(xVal, unwarpedH), Scalar(255,0,0), CV_FILLED, 8, 0);
-            }
-        }
-        
-        // draw black field of view bars
-        if(!trackingTraining)
-        {
-            line(thePanorama, Point(leftViewNormalCamera, 0), Point(leftViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
-            line(thePanorama, Point(rightViewNormalCamera, 0), Point(rightViewNormalCamera, unwarpedH), Scalar::all(0), 2, 8, 0);
-            
-            
-            // blacken out the unwanted sections of panorama
-            rectangle(thePanorama, Point(0,0), Point(leftBlack, unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
-            rectangle(thePanorama, Point(rightBlack,0), Point(unwarpedW,unwarpedH), Scalar(0,0,0), CV_FILLED, 8, 0);
-        }
-        
-        
-        
-        if(thePanorama.rows > 0 && thePanorama.cols > 0) imshow(windowname, thePanorama);
-        
-        // if the key pressed by user is esc (ascii 27) then break out of the loop
-        if(waitKey(1)==27)
-            break;
-        
-    }
-    cvDestroyAllWindows();
+    setupOpenGL(argc, argv);
+    cout << "about to start glutMainLoop" << endl;
+    glutMainLoop();
+    cout << "we shouldn't ever reach this! :)" << endl;
+    return 1337;
 }
