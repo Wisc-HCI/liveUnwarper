@@ -15,6 +15,7 @@
 #include <GLUT/GLUT.h>
 #include <OpenGL/gl.h>
 #include <OpenGL/glu.h>
+#include <png.h>
 using namespace std;
 using namespace cv;
 
@@ -27,7 +28,7 @@ int panoramaDegrees = 360        ; // 360, 180, or 40 !
 
 
 // framerate stuff
-int currentFrameRate = 100;//180;//125;
+int currentFrameRate = 180;//180;//125;
 int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
 list<int> trackingRateList(200,1);
@@ -133,12 +134,19 @@ typedef struct {
 glutWindow win;
 glutWindow win2;
 
+string leftFile = "leftTex.jpg";
+string rightFile = "rightTex.jpg";
+Mat leftMat, rightMat;
+
 // Function turn a cv::Mat into a texture, and return the texture ID as a GLuint for use
-GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wrapFilter)
+GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wrapFilter, int flag)
 {
 	// Generate a number for our textureID's unique handle
 	GLuint textureID;
 	glGenTextures(1, &textureID);
+    
+    //TODO ::: testing
+    textureID = flag;
     
 	// Bind to our texture handle
 	glBindTexture(GL_TEXTURE_2D, textureID);
@@ -171,6 +179,8 @@ GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wra
 		inputColourFormat = GL_LUMINANCE;
 	}
     
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    
 	// Create the texture
 	glTexImage2D(GL_TEXTURE_2D,     // Type of texture
 	             0,                 // Pyramid level (for mip-mapping) - 0 is the top level
@@ -183,6 +193,140 @@ GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wra
 	             mat.ptr());        // The actual image data itself
     
 	return textureID;
+}
+
+GLuint png_texture_load(const char * file_name, int * width, int * height)
+{
+    png_byte header[8];
+    
+    FILE *fp = fopen(file_name, "rb");
+    if (fp == 0)
+    {
+        perror(file_name);
+        return 0;
+    }
+    
+    // read the header
+    fread(header, 1, 8, fp);
+    
+    if (png_sig_cmp(header, 0, 8))
+    {
+        fprintf(stderr, "error: %s is not a PNG.\n", file_name);
+        fclose(fp);
+        return 0;
+    }
+    
+    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png_ptr)
+    {
+        fprintf(stderr, "error: png_create_read_struct returned 0.\n");
+        fclose(fp);
+        return 0;
+    }
+    
+    // create png info struct
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    if (!info_ptr)
+    {
+        fprintf(stderr, "error: png_create_info_struct returned 0.\n");
+        png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
+        fclose(fp);
+        return 0;
+    }
+    
+    // create png info struct
+    png_infop end_info = png_create_info_struct(png_ptr);
+    if (!end_info)
+    {
+        fprintf(stderr, "error: png_create_info_struct returned 0.\n");
+        png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) NULL);
+        fclose(fp);
+        return 0;
+    }
+    
+    // the code in this if statement gets called if libpng encounters an error
+    if (setjmp(png_jmpbuf(png_ptr))) {
+        fprintf(stderr, "error from libpng\n");
+        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+        fclose(fp);
+        return 0;
+    }
+    
+    // init png reading
+    png_init_io(png_ptr, fp);
+    
+    // let libpng know you already read the first 8 bytes
+    png_set_sig_bytes(png_ptr, 8);
+    
+    // read all the info up to the image data
+    png_read_info(png_ptr, info_ptr);
+    
+    // variables to pass to get info
+    int bit_depth, color_type;
+    png_uint_32 temp_width, temp_height;
+    
+    // get info about png
+    png_get_IHDR(png_ptr, info_ptr, &temp_width, &temp_height, &bit_depth, &color_type,
+                 NULL, NULL, NULL);
+    
+    if (width){ *width = temp_width; }
+    if (height){ *height = temp_height; }
+    
+    // Update the png info struct.
+    png_read_update_info(png_ptr, info_ptr);
+    
+    // Row size in bytes.
+    int rowbytes = png_get_rowbytes(png_ptr, info_ptr);
+    
+    // glTexImage2d requires rows to be 4-byte aligned
+    rowbytes += 3 - ((rowbytes-1) % 4);
+    
+    // Allocate the image_data as a big block, to be given to opengl
+    png_byte * image_data;
+    image_data = (unsigned char *)(malloc(rowbytes * temp_height * sizeof(png_byte)+15));
+    if (image_data == NULL)
+    {
+        fprintf(stderr, "error: could not allocate memory for PNG image data\n");
+        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+        fclose(fp);
+        return 0;
+    }
+    
+    // row_pointers is for pointing to image_data for reading the png with libpng
+    png_bytep * row_pointers = (unsigned char **)malloc(temp_height * sizeof(png_bytep));
+    if (row_pointers == NULL)
+    {
+        fprintf(stderr, "error: could not allocate memory for PNG row pointers\n");
+        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+        free(image_data);
+        fclose(fp);
+        return 0;
+    }
+    
+    // set the individual row_pointers to point at the correct offsets of image_data
+    int i;
+    for (i = 0; i < temp_height; i++)
+    {
+        row_pointers[temp_height - 1 - i] = image_data + i * rowbytes;
+    }
+    
+    // read the png into image_data through row_pointers
+    png_read_image(png_ptr, row_pointers);
+    
+    // Generate the OpenGL texture object
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, temp_width, temp_height, 0, GL_RGB, GL_UNSIGNED_BYTE, image_data);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    
+    // clean up
+    png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+    free(image_data);
+    free(row_pointers);
+    fclose(fp);
+    return texture;
 }
 
 string toString ( int Number )
@@ -421,20 +565,21 @@ void setup()
     system("/usr/local/bin/node ../scripts/ZHIserver.js &");
     
     sleep(3);
-    /*
+    
     // run chrome
     system("killall -9 \"Google Chrome\"");
-    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
+    //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
+    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=608,24 --window-size=1344,1415 &");
     
-    sleep(4);*/
+    sleep(4);
     
     // this is used if using imread() a ton
     frameCount = -10;
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     setFrameCount();
-    cout << "just set frame count" << endl;
+    cout << "just set frame count!" << endl;
     setFrameCount();
-    cout << "set it again.." << endl;
+    cout << "set it again!" << endl;
     
     setFrameRate(currentFrameRate);
     
@@ -471,6 +616,7 @@ float degreesOfRobotFOV = 40.0;
 float x = 3.7;
 float y = 3.0;//5.0;
 float zDist = 0;
+float labelHeight = 1.0;
 
 void displayLeft()
 {
@@ -487,19 +633,17 @@ void displayLeft()
 	glLoadIdentity();
     
     // Convert to texture
-	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP);
+	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 33);
     
     // Bind texture
 	glBindTexture(GL_TEXTURE_2D, tex);
     
     glBegin(GL_QUAD_STRIP);
     
-    
-    
     float leftXCoord = 1-(((panoramaDegrees/2.0)/360.0) + .5);
     float rightXCoord = (-degreesOfRobotFOV/720.0 + .5);
     
-    cout << leftXCoord << " " << rightXCoord << endl;
+    //cout << leftXCoord << " " << rightXCoord << endl;
     
     glTexCoord2f(leftXCoord,0.0);
     glVertex3f(-x,y,zDist);
@@ -514,8 +658,33 @@ void displayLeft()
     
     glEnd();
     
-    // Free the texture memory
-	glDeleteTextures(1, &tex);
+    //namedWindow(windowname, CV_WINDOW_AUTOSIZE);
+    //moveWindow(windowname, 560, 0);
+    //imshow(windowname, rightMat);
+    
+    GLuint leftTex = matToTexture(leftMat, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
+    
+    // left label display
+    glBindTexture(GL_TEXTURE_2D, leftTex);
+    glBegin(GL_QUADS);
+    
+    glTexCoord2f(0.0,0.0);
+    glVertex3f(-x,-y-4,zDist);
+    
+    glTexCoord2f(1.0,0.0);
+    glVertex3f(-1,-y-4,zDist);
+    glTexCoord2f(1.0,1.0);
+    glVertex3f(-1,-y-4-labelHeight,zDist);
+    
+    glTexCoord2f(0.0,1.0);
+    glVertex3f(-x,-y-4-labelHeight,zDist);
+    
+    
+    glEnd();
+    
+    // free the texture memory
+    glDeleteTextures(1, &tex);
+    glDeleteTextures(1, &leftTex);
     
     glutSwapBuffers();
 }
@@ -535,7 +704,7 @@ void displayRight()
 	glLoadIdentity();
     
     // Convert to texture
-	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP);
+	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 39);
     
     // Bind texture
 	glBindTexture(GL_TEXTURE_2D, tex);
@@ -545,7 +714,7 @@ void displayRight()
     float leftXCoord = (degreesOfRobotFOV/720.0 + .5);
     float rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
     
-    cout << leftXCoord << " " << rightXCoord << endl;
+    //cout << leftXCoord << " " << rightXCoord << endl;
     
     glTexCoord2f(leftXCoord,0.0);
     glVertex3f(-x,y,zDist);
@@ -560,8 +729,29 @@ void displayRight()
     
     glEnd();
     
-    // Free the texture memory
-	glDeleteTextures(1, &tex);
+    GLuint rightTex = matToTexture(rightMat, GL_NEAREST, GL_NEAREST, GL_CLAMP, 32);
+    
+    // left label display
+    glBindTexture(GL_TEXTURE_2D, rightTex);
+    glBegin(GL_QUADS);
+    
+    glTexCoord2f(1.0,0.0);
+    glVertex3f(x,-y-4,zDist);
+    
+    glTexCoord2f(0.0,0.0);
+    glVertex3f(1,-y-4,zDist);
+    glTexCoord2f(0.0,1.0);
+    glVertex3f(1,-y-4-labelHeight,zDist);
+    
+    glTexCoord2f(1.0,1.0);
+    glVertex3f(x,-y-4-labelHeight,zDist);
+    
+    
+    glEnd();
+    
+    // free the texture memory
+    glDeleteTextures(1, &tex);
+    glDeleteTextures(1, &rightTex);
     
     glutSwapBuffers();
 }
@@ -604,7 +794,7 @@ void refresher()
     int past = rateList.back();
     rateList.pop_back();
     
-    cout << "framecount " << frameCount << endl;
+    //cout << "framecount " << frameCount << endl;
     
     if(isValid(frame))
     {
@@ -722,6 +912,16 @@ void setupOpenGL(int argc, char **argv)
     glutIdleFunc(refresher);
     
     initialize();
+    
+    int a = 0, b = 0;
+    
+    // load left and right textures
+    //leftTex = png_texture_load(leftFile.c_str(), &a, &b);
+    //rightTex = png_texture_load(rightFile.c_str(), &a, &b);
+    
+    
+    leftMat = imread(leftFile);
+    rightMat = imread(rightFile);
 }
 
 

@@ -41,7 +41,7 @@ app.get("/" , function(req, res){
 var i = 0;
 
 function saveJPG(){
-    var server = http.get("http://192.168.1.144:8080/shot.jpg", function(res){
+    var server = http.get("http://192.168.1.106:8080/shot.jpg", function(res){
         //console.log("make request");
         var data = new Buffer(0);
         res.on('data', function(chunk){
