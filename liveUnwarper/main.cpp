@@ -569,7 +569,7 @@ void setup()
     // run chrome
     system("killall -9 \"Google Chrome\"");
     //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
-    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=608,24 --window-size=1344,1415 &");
+    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=607,24 --window-size=1346,1415 &");
     
     sleep(4);
     
@@ -669,15 +669,15 @@ void displayLeft()
     glBegin(GL_QUADS);
     
     glTexCoord2f(0.0,0.0);
-    glVertex3f(-x,-y-4,zDist);
+    glVertex3f(-1.25,-y-.4,zDist);
     
     glTexCoord2f(1.0,0.0);
-    glVertex3f(-1,-y-4,zDist);
+    glVertex3f(1.25,-y-.4,zDist);
     glTexCoord2f(1.0,1.0);
-    glVertex3f(-1,-y-4-labelHeight,zDist);
+    glVertex3f(1.25,-y-.4-labelHeight,zDist);
     
     glTexCoord2f(0.0,1.0);
-    glVertex3f(-x,-y-4-labelHeight,zDist);
+    glVertex3f(-1.25,-y-.4-labelHeight,zDist);
     
     
     glEnd();
@@ -736,15 +736,15 @@ void displayRight()
     glBegin(GL_QUADS);
     
     glTexCoord2f(1.0,0.0);
-    glVertex3f(x,-y-4,zDist);
+    glVertex3f(1.25,-y-.4,zDist);
     
     glTexCoord2f(0.0,0.0);
-    glVertex3f(1,-y-4,zDist);
+    glVertex3f(-1.25,-y-.4,zDist);
     glTexCoord2f(0.0,1.0);
-    glVertex3f(1,-y-4-labelHeight,zDist);
+    glVertex3f(-1.25,-y-.4-labelHeight,zDist);
     
     glTexCoord2f(1.0,1.0);
-    glVertex3f(x,-y-4-labelHeight,zDist);
+    glVertex3f(1.25,-y-.4-labelHeight,zDist);
     
     
     glEnd();
