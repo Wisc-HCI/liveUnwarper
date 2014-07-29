@@ -49,22 +49,9 @@ int unwarpedW = 1440, unwarpedH = 240;
 //int unwarpedW = 1140, unwarpedH = 200;
 //int unwarpedW = 770, unwarpedH = 180;
 
-
-int leftBlack = 0;
-int rightBlack = unwarpedW;
-
-
-// debug stuffs
-bool debug = false;
-bool tmpdebug = false;
-VideoWriter processedOut;
-VideoWriter gradientOut;
-
 Mat thePanorama;
+Mat theFront;
 
-string rightTurn = "osascript ../scripts/rightMove.scpt";
-string leftTurn = "osascript ../scripts/leftMove.scpt";
-string currentCommand = leftTurn;
 string frameRateCommand = "python ../scripts/frameRateChanger.py ";
 
 const double PI = 3.1415926535897932384626;
@@ -72,13 +59,13 @@ const double PI = 3.1415926535897932384626;
 string windowname = "Double";
 int failCount = 0;
 
-//CvCapture* camera;
 int degreesOfNormalCamera = 40;
 int leftViewNormalCamera, rightViewNormalCamera;
 Mat frame;
 Mat templ;
 Mat inputGrad;
 int frameCount, maxFrameCount;
+int frontFrameCount;
 
 // unwarping parameters
 int cx = -1, cy = -1;
@@ -95,30 +82,8 @@ int remapCenterY;
 string pathToVideoImages = "../scripts/tmp/";
 
 string filepreamble = pathToVideoImages + "unwarp/image";
+string frontfilepreamble = pathToVideoImages + "front/image";
 string miniFilePreamble = pathToVideoImages + "debug/";
-
-// tracking variables
-int trackingSliceWidth = 60;
-Mat trackedImage = Mat(Size(trackingSliceWidth*2, unwarpedH), CV_8UC3);
-bool tracking = false;
-int degreesFromCenter;
-int trackingThresh = (unwarpedW*degreesOfNormalCamera)/720.0;
-int trackingTimesUnderThresh = 0;
-
-SurfFeatureDetector detector(400);
-Mat descriptors_pano, descriptors_track;
-std::vector<KeyPoint> keypoints_pano, keypoints_track;
-SurfDescriptorExtractor extractor;
-FlannBasedMatcher matcher;
-std::vector< DMatch > matches;
-float xAverage = 0.0;
-int commandsGiven;
-int heuristicTurns;
-
-int leftX, rightX;
-
-bool trackingTraining = false;
-int trackingTrainingIterations = 0;
 
 typedef struct {
     int id;
@@ -132,7 +97,6 @@ typedef struct {
 } glutWindow;
 
 glutWindow win;
-glutWindow win2;
 
 string leftFile = "leftTex.jpg";
 string rightFile = "rightTex.jpg";
@@ -193,140 +157,6 @@ GLuint matToTexture(cv::Mat &mat, GLenum minFilter, GLenum magFilter, GLenum wra
 	             mat.ptr());        // The actual image data itself
     
 	return textureID;
-}
-
-GLuint png_texture_load(const char * file_name, int * width, int * height)
-{
-    png_byte header[8];
-    
-    FILE *fp = fopen(file_name, "rb");
-    if (fp == 0)
-    {
-        perror(file_name);
-        return 0;
-    }
-    
-    // read the header
-    fread(header, 1, 8, fp);
-    
-    if (png_sig_cmp(header, 0, 8))
-    {
-        fprintf(stderr, "error: %s is not a PNG.\n", file_name);
-        fclose(fp);
-        return 0;
-    }
-    
-    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png_ptr)
-    {
-        fprintf(stderr, "error: png_create_read_struct returned 0.\n");
-        fclose(fp);
-        return 0;
-    }
-    
-    // create png info struct
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    if (!info_ptr)
-    {
-        fprintf(stderr, "error: png_create_info_struct returned 0.\n");
-        png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
-        fclose(fp);
-        return 0;
-    }
-    
-    // create png info struct
-    png_infop end_info = png_create_info_struct(png_ptr);
-    if (!end_info)
-    {
-        fprintf(stderr, "error: png_create_info_struct returned 0.\n");
-        png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) NULL);
-        fclose(fp);
-        return 0;
-    }
-    
-    // the code in this if statement gets called if libpng encounters an error
-    if (setjmp(png_jmpbuf(png_ptr))) {
-        fprintf(stderr, "error from libpng\n");
-        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        fclose(fp);
-        return 0;
-    }
-    
-    // init png reading
-    png_init_io(png_ptr, fp);
-    
-    // let libpng know you already read the first 8 bytes
-    png_set_sig_bytes(png_ptr, 8);
-    
-    // read all the info up to the image data
-    png_read_info(png_ptr, info_ptr);
-    
-    // variables to pass to get info
-    int bit_depth, color_type;
-    png_uint_32 temp_width, temp_height;
-    
-    // get info about png
-    png_get_IHDR(png_ptr, info_ptr, &temp_width, &temp_height, &bit_depth, &color_type,
-                 NULL, NULL, NULL);
-    
-    if (width){ *width = temp_width; }
-    if (height){ *height = temp_height; }
-    
-    // Update the png info struct.
-    png_read_update_info(png_ptr, info_ptr);
-    
-    // Row size in bytes.
-    int rowbytes = png_get_rowbytes(png_ptr, info_ptr);
-    
-    // glTexImage2d requires rows to be 4-byte aligned
-    rowbytes += 3 - ((rowbytes-1) % 4);
-    
-    // Allocate the image_data as a big block, to be given to opengl
-    png_byte * image_data;
-    image_data = (unsigned char *)(malloc(rowbytes * temp_height * sizeof(png_byte)+15));
-    if (image_data == NULL)
-    {
-        fprintf(stderr, "error: could not allocate memory for PNG image data\n");
-        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        fclose(fp);
-        return 0;
-    }
-    
-    // row_pointers is for pointing to image_data for reading the png with libpng
-    png_bytep * row_pointers = (unsigned char **)malloc(temp_height * sizeof(png_bytep));
-    if (row_pointers == NULL)
-    {
-        fprintf(stderr, "error: could not allocate memory for PNG row pointers\n");
-        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        free(image_data);
-        fclose(fp);
-        return 0;
-    }
-    
-    // set the individual row_pointers to point at the correct offsets of image_data
-    int i;
-    for (i = 0; i < temp_height; i++)
-    {
-        row_pointers[temp_height - 1 - i] = image_data + i * rowbytes;
-    }
-    
-    // read the png into image_data through row_pointers
-    png_read_image(png_ptr, row_pointers);
-    
-    // Generate the OpenGL texture object
-    GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, temp_width, temp_height, 0, GL_RGB, GL_UNSIGNED_BYTE, image_data);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    
-    // clean up
-    png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-    free(image_data);
-    free(row_pointers);
-    fclose(fp);
-    return texture;
 }
 
 string toString ( int Number )
@@ -503,37 +333,9 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
     matchLoc.x += remapCenterX;
     matchLoc.y += remapCenterY;
     
-    /// display located area
-    if(debug)
-    {
-        //rectangle( img_display, matchLoc, Point( matchLoc.x + templ.cols , matchLoc.y + templ.rows ), Scalar::all(255), 2, 8, 0 );
-        rectangle( result, matchLoc, Point( matchLoc.x + templ.cols , matchLoc.y + templ.rows ), Scalar::all(255), 2, 8, 0 );
-    }
-    
     // update by half of the template's width and height for actual center point
     matchLoc.x += templ.cols/2;
     matchLoc.y += templ.rows/2;
-    
-    //rectangle(img_display, Point(matchLoc.x - 3, matchLoc.y - 3), Point(matchLoc.x + 3, matchLoc.y + 3), Scalar::all(255));
-    
-    if(first || tmpdebug)
-    {
-        first = false;
-        imwrite("imgDisplay.jpg", img_display);
-        imwrite("scanImage.jpg", scanImage);
-        imwrite("inputGrad.jpg", inputGrad);
-        cout << "wrote debug files" << endl;
-        tmpdebug = false;
-    }
-    
-    if(debug)
-    {
-        cout << "writing debug pics" << endl;
-        imwrite(miniFilePreamble + "image" + format(frameCount) + ".jpeg", img_display);
-        imwrite(miniFilePreamble + "gradi" + format(frameCount) + ".jpeg", inputGrad);
-        //processedOut.write(img_display);
-        //gradientOut.write(inputGrad);
-    }
     
     *cx = matchLoc.x;
     *cy = matchLoc.y;
@@ -553,12 +355,18 @@ void setFrameCount()
     }
 }
 
+void setFrontFrameCount()
+{
+    while(!theFront.data) // go until we find the first valid image file so we know where to start the framecount
+    {
+        frontFrameCount += 25;
+        cout << "looking for file: " << frontfilepreamble + format(frontFrameCount) + ".jpeg" << endl;
+        frame = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
+    }
+}
+
 void setup()
 {
-    if(debug)
-    {
-        cout << "debug is on." << endl;
-    }
     // TODO ::: uncomment below for actual running, this kills chrome and node
     // run video grabber
     system("killall node");
@@ -567,42 +375,27 @@ void setup()
     sleep(3);
     
     // run chrome
-    system("killall -9 \"Google Chrome\"");
+    //system("killall -9 \"Google Chrome\"");
     //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
-    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=607,24 --window-size=1346,1415 &");
+    //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=607,24 --window-size=1346,1415 &");
     
     sleep(4);
     
-    // this is used if using imread() a ton
-    frameCount = -10;
+    frameCount = -10, frontFrameCount = -10;
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     setFrameCount();
     cout << "just set frame count!" << endl;
     setFrameCount();
     cout << "set it again!" << endl;
     
+    theFront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
+    setFrontFrameCount();
+    cout << "just set front frame count!" << endl;
+    setFrontFrameCount();
+    cout << "set it again!" << endl;
+    
     setFrameRate(currentFrameRate);
     
-    // window to show stream
-    /*
-    namedWindow(windowname, CV_WINDOW_AUTOSIZE);
-    setMouseCallback(windowname, onMouse);
-    moveWindow(windowname, 560, 0);
-    
-    // calculate the right edge of the left black section
-    leftBlack = (unwarpedW/2) - ((unwarpedW*panoramaDegrees)/720.0);
-    
-    // calculate the left edge of the right black section
-    rightBlack = (unwarpedW/2) + ((unwarpedW*panoramaDegrees)/720.0);
-    
-    // calculate black field of view bars
-    int normalCameraOffset = unwarpedW*(degreesOfNormalCamera/720.0);
-    leftViewNormalCamera = (unwarpedW/2.0) - normalCameraOffset;
-    rightViewNormalCamera = (unwarpedW/2.0) + normalCameraOffset;
-    
-    // set training for tracking to be true
-    if(panoramaDegrees > degreesOfNormalCamera) setUpTrackingTraining();
-    */
     // read in the template file
     templ = imread(templateFileName);
     if(!templ.data)
@@ -618,24 +411,24 @@ float y = 3.0;//5.0;
 float zDist = 0;
 float labelHeight = 1.0;
 
-void displayLeft()
+void displayAll()
 {
     GLfloat aspect = (GLfloat) win.width / win.height;
-	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);		// set up a perspective projection matrix
+	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);
     
-    gluLookAt(0.0, 0.0, 5.00,  /* eye is at (0,0,5) */
-              0.0, 0.0, 0.0,      /* center is at (0,0,0) */
-              0.0, 1.0, 0.0);     /* up is in positive Y direction */
+    gluLookAt(0.0, 0.0, 5.00,     // eye is at (0,0,5)
+              0.0, 0.0, 0.0,      // center is at (0,0,0)
+              0.0, 1.0, 0.0);     // up is in positive Y direction
     
-    glMatrixMode(GL_PROJECTION);												// select projection matrix
+    glMatrixMode(GL_PROJECTION);
     
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);		     // Clear Screen and Depth Buffer
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
     
-    // Convert to texture
+    // convert to texture
 	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 33);
     
-    // Bind texture
+    // bind texture
 	glBindTexture(GL_TEXTURE_2D, tex);
     
     glBegin(GL_QUAD_STRIP);
@@ -649,8 +442,6 @@ void displayLeft()
     glVertex3f(-x,y,zDist);
     glTexCoord2f(leftXCoord,1.0);
     glVertex3f(-x,-y,zDist);
-    // center panel
-    //glTexCoord2f(0.0,1.0);
     glTexCoord2f(rightXCoord, 0.0);
     glVertex3f(x,y,zDist);
     glTexCoord2f(rightXCoord, 1.0);
@@ -662,7 +453,8 @@ void displayLeft()
     //moveWindow(windowname, 560, 0);
     //imshow(windowname, rightMat);
     
-    GLuint leftTex = matToTexture(leftMat, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
+    // TODO ::: get both this and the other displaying simul
+    GLuint leftTex = matToTexture(theFront, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
     
     // left label display
     glBindTexture(GL_TEXTURE_2D, leftTex);
@@ -678,7 +470,6 @@ void displayLeft()
     
     glTexCoord2f(0.0,1.0);
     glVertex3f(-1.25,-y-.4-labelHeight,zDist);
-    
     
     glEnd();
     
@@ -758,25 +549,16 @@ void displayRight()
 
 #define KEY_ESCAPE 27
 
-void keyboard ( unsigned char key, int mousePositionX, int mousePositionY )
+void keyboard (unsigned char key, int mousePositionX, int mousePositionY)
 {
-    switch ( key )
+    switch (key)
     {
         case KEY_ESCAPE:
-            exit ( 0 );
+            exit(0);
             break;
         default:
             break;
     }
-}
-
-void initialize()
-{
-    glEnable( GL_DEPTH_TEST );
-    glEnable(GL_TEXTURE_2D);
-    glDepthFunc( GL_LEQUAL );
-    glHint( GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST );						// specify implementation-specific hints
-	glClearColor(0.0, 0.0, 0.0, 1.0);											// specify clear values for the color buffers
 }
 
 bool isValid(Mat m)
@@ -785,9 +567,17 @@ bool isValid(Mat m)
     return m.cols == 1024 && m.rows == 768;
 }
 
+bool isValidFront(Mat m)
+{
+    // TODO ::: this may change
+    return m.cols == 1024 && m.rows == 768;
+}
+
 void refresher()
 {
-    // read the current frame
+    bool postRedisplay = false;
+    
+    // read the current pano frame
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     actualCounter++;
     
@@ -822,10 +612,8 @@ void refresher()
         
         frameCount++;
         failCount = 0;
-        glutSetWindow(win.id);
-        glutPostRedisplay();
-        glutSetWindow(win2.id);
-        glutPostRedisplay();
+        //glutSetWindow(win.id);
+        postRedisplay = true;
     }
     else
     {
@@ -850,38 +638,38 @@ void refresher()
             setFrameRate(currentFrameRate);
         }
     }
-    /*
-    if(actualCounter % 150 == 0)
+    
+    // read the current front frame
+    Mat tmpfront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
+    if(isValidFront(tmpfront))
     {
-            cout << "past failure counter: " << pastFailureCounter << endl;
-            if(pastFailureCounter > 80)
-            {
-                // we are waiting too often for new frames, should increase sample rate
-                currentFrameRate -= 1;
-                setFrameRate(currentFrameRate);
-            }
-            else if(pastFailureCounter < 60)
-            {
-                // we are having trouble keeping up, decrease sample rate
-                currentFrameRate += 1;
-                setFrameRate(currentFrameRate);
-            }
-            //cout << pastFailureCounter << endl;
-            
-            // we care about the CHANGE in the pastFailureCounter (if the change is
-        
-    }*/
-    //if(thePanorama.rows > 0 && thePanorama.cols > 0) imshow(windowname, thePanorama);
-    //cout << "ran refresher: " << isValid(thePanorama) << endl;
+        theFront = tmpfront;
+        frontFrameCount++;
+        postRedisplay = true;
+    }
+    
+    if(postRedisplay)
+    {
+        glutPostRedisplay();
+    }
 }
 
+void initialize()
+{
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    glDepthFunc(GL_LEQUAL);
+    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+	glClearColor(0.0, 0.0, 0.0, 1.0);
+}
 
 void setupOpenGL(int argc, char **argv)
 {
     int offset = 45; // offset from top of screen
+    
 	// initialize and run program
-	glutInit(&argc, argv);                                      // GLUT initialization
-	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );  // Display Mode
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );
     
     win.width = 607;
     win.height = 1440 - offset; // make this roughly the height of the monitor
@@ -890,35 +678,14 @@ void setupOpenGL(int argc, char **argv)
     win.z_near = 0.1f;
     win.z_far = 500.0f;
     
-    glutInitWindowSize(win.width,win.height);					// set window size
-    win.id = glutCreateWindow(win.title);								// create Window
+    glutInitWindowSize(win.width,win.height);
+    win.id = glutCreateWindow(win.title);
     glutPositionWindow(0,offset);
-    glutDisplayFunc(displayLeft);									// register Display Function
-    glutKeyboardFunc(keyboard);                                // register Keyboard Handler
-    
-    initialize();
-    
-    win2.width = win.width;
-    win2.height = win.height; // make this roughly the height of the monitor
-    win2.title = "Double";
-    win2.field_of_view_angle = win.field_of_view_angle;
-    win2.z_near = win.z_near;
-    win2.z_far = win.z_far;
-    
-    win2.id = glutCreateWindow(win2.title);
-    glutPositionWindow(2560 - win2.width, offset); // 1440 is screen resolution x
-    glutDisplayFunc(displayRight);
+    glutDisplayFunc(displayAll);
     glutKeyboardFunc(keyboard);
     glutIdleFunc(refresher);
     
     initialize();
-    
-    int a = 0, b = 0;
-    
-    // load left and right textures
-    //leftTex = png_texture_load(leftFile.c_str(), &a, &b);
-    //rightTex = png_texture_load(rightFile.c_str(), &a, &b);
-    
     
     leftMat = imread(leftFile);
     rightMat = imread(rightFile);
