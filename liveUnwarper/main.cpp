@@ -15,7 +15,6 @@
 #include <GLUT/GLUT.h>
 #include <OpenGL/gl.h>
 #include <OpenGL/glu.h>
-#include <png.h>
 using namespace std;
 using namespace cv;
 
@@ -28,7 +27,7 @@ int panoramaDegrees = 360        ; // 360, 180, or 40 !
 
 
 // framerate stuff
-int currentFrameRate = 180;//180;//125;
+int currentFrameRate = 220;//180;//125;
 int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
 list<int> trackingRateList(200,1);
@@ -166,10 +165,10 @@ string toString ( int Number )
     return ss.str();
 }
 
-void setFrameRate(int rate)
+void setFrameRate(int rate, int port)
 {
     // sets delay for sampling of image stream
-    system((frameRateCommand + toString(rate) + " &").c_str());
+    system((frameRateCommand + toString(rate) + " " + toString(port) + " &").c_str());
     //cout << "frame rate set to: " << rate << endl;
 }
 
@@ -353,6 +352,7 @@ void setFrameCount()
         cout << "looking for file: " << filepreamble + format(frameCount) + ".jpeg" << endl;
         frame = imread(filepreamble + format(frameCount) + ".jpeg");
     }
+    frameCount += 10;
 }
 
 void setFrontFrameCount()
@@ -361,8 +361,9 @@ void setFrontFrameCount()
     {
         frontFrameCount += 25;
         cout << "looking for file: " << frontfilepreamble + format(frontFrameCount) + ".jpeg" << endl;
-        frame = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
+        theFront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
     }
+    frontFrameCount += 10;
 }
 
 void setup()
@@ -370,7 +371,8 @@ void setup()
     // TODO ::: uncomment below for actual running, this kills chrome and node
     // run video grabber
     system("killall node");
-    system("/usr/local/bin/node ../scripts/ZHIserver.js &");
+    system("/usr/local/bin/node ../scripts/panoServer.js &");
+    system("/usr/local/bin/node ../scripts/frontServer.js &");
     
     sleep(3);
     
@@ -384,17 +386,18 @@ void setup()
     frameCount = -10, frontFrameCount = -10;
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
     setFrameCount();
-    cout << "just set frame count!" << endl;
+    cout << "just set frame count! " << frameCount << endl;
     setFrameCount();
-    cout << "set it again!" << endl;
+    cout << "set it again! " << frameCount << endl;
     
     theFront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
     setFrontFrameCount();
-    cout << "just set front frame count!" << endl;
+    cout << "just set front frame count! " << frontFrameCount << endl;
     setFrontFrameCount();
-    cout << "set it again!" << endl;
+    cout << "set it again! " << frontFrameCount << endl;
     
-    setFrameRate(currentFrameRate);
+    setFrameRate(currentFrameRate, 9001);
+    setFrameRate(currentFrameRate - 60, 9002);
     
     // read in the template file
     templ = imread(templateFileName);
@@ -439,110 +442,60 @@ void displayAll()
     //cout << leftXCoord << " " << rightXCoord << endl;
     
     glTexCoord2f(leftXCoord,0.0);
-    glVertex3f(-x,y,zDist);
+    glVertex3f(-x-10,y,zDist);
     glTexCoord2f(leftXCoord,1.0);
-    glVertex3f(-x,-y,zDist);
+    glVertex3f(-x-10,-y,zDist);
     glTexCoord2f(rightXCoord, 0.0);
-    glVertex3f(x,y,zDist);
+    glVertex3f(x-10,y,zDist);
     glTexCoord2f(rightXCoord, 1.0);
-    glVertex3f(x,-y,zDist);
+    glVertex3f(x-10,-y,zDist);
     
     glEnd();
-    
-    //namedWindow(windowname, CV_WINDOW_AUTOSIZE);
-    //moveWindow(windowname, 560, 0);
-    //imshow(windowname, rightMat);
-    
-    // TODO ::: get both this and the other displaying simul
-    GLuint leftTex = matToTexture(theFront, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
-    
-    // left label display
-    glBindTexture(GL_TEXTURE_2D, leftTex);
-    glBegin(GL_QUADS);
-    
-    glTexCoord2f(0.0,0.0);
-    glVertex3f(-1.25,-y-.4,zDist);
-    
-    glTexCoord2f(1.0,0.0);
-    glVertex3f(1.25,-y-.4,zDist);
-    glTexCoord2f(1.0,1.0);
-    glVertex3f(1.25,-y-.4-labelHeight,zDist);
-    
-    glTexCoord2f(0.0,1.0);
-    glVertex3f(-1.25,-y-.4-labelHeight,zDist);
-    
-    glEnd();
-    
-    // free the texture memory
-    glDeleteTextures(1, &tex);
-    glDeleteTextures(1, &leftTex);
-    
-    glutSwapBuffers();
-}
-
-void displayRight()
-{
-    GLfloat aspect = (GLfloat) win.width / win.height;
-	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);		// set up a perspective projection matrix
-    
-    gluLookAt(0.0, 0.0, 5.00,  /* eye is at (0,0,5) */
-              0.0, 0.0, 0.0,      /* center is at (0,0,0) */
-              0.0, 1.0, 0.0);     /* up is in positive Y direction */
-    
-    glMatrixMode(GL_PROJECTION);												// select projection matrix
-    
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);		     // Clear Screen and Depth Buffer
-	glLoadIdentity();
-    
-    // Convert to texture
-	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 39);
-    
-    // Bind texture
-	glBindTexture(GL_TEXTURE_2D, tex);
     
     glBegin(GL_QUAD_STRIP);
     
-    float leftXCoord = (degreesOfRobotFOV/720.0 + .5);
-    float rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
+    leftXCoord = (degreesOfRobotFOV/720.0 + .5);
+    rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
     
     //cout << leftXCoord << " " << rightXCoord << endl;
     
     glTexCoord2f(leftXCoord,0.0);
-    glVertex3f(-x,y,zDist);
+    glVertex3f(-x+10,y,zDist);
     glTexCoord2f(leftXCoord,1.0);
-    glVertex3f(-x,-y,zDist);
-    // center panel
-    //glTexCoord2f(0.0,1.0);
+    glVertex3f(-x+10,-y,zDist);
     glTexCoord2f(rightXCoord, 0.0);
-    glVertex3f(x,y,zDist);
+    glVertex3f(x+10,y,zDist);
     glTexCoord2f(rightXCoord, 1.0);
-    glVertex3f(x,-y,zDist);
+    glVertex3f(x+10,-y,zDist);
     
     glEnd();
     
-    GLuint rightTex = matToTexture(rightMat, GL_NEAREST, GL_NEAREST, GL_CLAMP, 32);
     
-    // left label display
-    glBindTexture(GL_TEXTURE_2D, rightTex);
+    GLuint frontTex = matToTexture(theFront, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
+    
+    // front display
+    glBindTexture(GL_TEXTURE_2D, frontTex);
     glBegin(GL_QUADS);
     
-    glTexCoord2f(1.0,0.0);
-    glVertex3f(1.25,-y-.4,zDist);
+    double frontWidth = 5.5;
+    double frontHeight = 8.4;
     
     glTexCoord2f(0.0,0.0);
-    glVertex3f(-1.25,-y-.4,zDist);
-    glTexCoord2f(0.0,1.0);
-    glVertex3f(-1.25,-y-.4-labelHeight,zDist);
+    glVertex3f(-frontWidth,frontHeight,zDist);
     
+    glTexCoord2f(1.0,0.0);
+    glVertex3f(frontWidth,frontHeight,zDist);
     glTexCoord2f(1.0,1.0);
-    glVertex3f(1.25,-y-.4-labelHeight,zDist);
+    glVertex3f(frontWidth,-frontHeight,zDist);
     
+    glTexCoord2f(0.0,1.0);
+    glVertex3f(-frontWidth,-frontHeight,zDist);
     
     glEnd();
     
     // free the texture memory
     glDeleteTextures(1, &tex);
-    glDeleteTextures(1, &rightTex);
+    glDeleteTextures(1, &frontTex);
     
     glutSwapBuffers();
 }
@@ -570,7 +523,7 @@ bool isValid(Mat m)
 bool isValidFront(Mat m)
 {
     // TODO ::: this may change
-    return m.cols == 1024 && m.rows == 768;
+    return m.cols == 768 && m.rows == 1024;
 }
 
 void refresher()
@@ -579,22 +532,34 @@ void refresher()
     
     // read the current pano frame
     frame = imread(filepreamble + format(frameCount) + ".jpeg");
+    // read the current front frame
+    Mat tmpfront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
+    
     actualCounter++;
     
-    int past = rateList.back();
-    rateList.pop_back();
+    //int past = rateList.back();
+    //rateList.pop_back();
     
     //cout << "framecount " << frameCount << endl;
+    //cout << "frontframecount " << frontFrameCount << endl;
+    
+    
+    if(isValidFront(tmpfront))
+    {
+        theFront = tmpfront;
+        frontFrameCount++;
+        postRedisplay = true;
+    }
     
     if(isValid(frame))
     {
         //cout << "valid frame." << endl;
         // new framerate stuff
-        rateList.push_front(0);
-        if(past != 0)
-        {
-            pastFailureCounter--;
-        }
+        //rateList.push_front(0);
+        //if(past != 0)
+        //{
+        //    pastFailureCounter--;
+        //}
         
         // 1) estimate the center
         estimateCenterSteve(&cx, &cy, frame);
@@ -611,40 +576,7 @@ void refresher()
         thePanorama = unwarpSimple(frame, &cx, &cy);
         
         frameCount++;
-        failCount = 0;
-        //glutSetWindow(win.id);
-        postRedisplay = true;
-    }
-    else
-    {
-        //cout << "invalid frame." << endl;
-        // new framerate stuff
-        rateList.push_front(1);
-        if(past != 1)
-        {
-            pastFailureCounter++;
-        }
-        
-        failCount++;
-        
-        if(failCount > 80000)
-        {
-            cout << "couldn't keep up with image processing, performing reset" << endl;
-            frameCount -= 30;
-            setFrameCount();
-            failCount = 0;
-            
-            currentFrameRate += 1;
-            setFrameRate(currentFrameRate);
-        }
-    }
-    
-    // read the current front frame
-    Mat tmpfront = imread(frontfilepreamble + format(frontFrameCount) + ".jpeg");
-    if(isValidFront(tmpfront))
-    {
-        theFront = tmpfront;
-        frontFrameCount++;
+        //failCount = 0;
         postRedisplay = true;
     }
     
@@ -671,7 +603,7 @@ void setupOpenGL(int argc, char **argv)
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );
     
-    win.width = 607;
+    win.width = 2560;
     win.height = 1440 - offset; // make this roughly the height of the monitor
     win.title = "Double";
     win.field_of_view_angle = 120;
@@ -695,9 +627,10 @@ void setupOpenGL(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+    setupOpenGL(argc, argv);
     setup();
     cx = -1; cy = -1;
-    setupOpenGL(argc, argv);
+    
     cout << "about to start glutMainLoop" << endl;
     glutMainLoop();
     cout << "we shouldn't ever reach this! :)" << endl;

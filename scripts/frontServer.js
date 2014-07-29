@@ -4,7 +4,7 @@ var http = require('http');
 var express = require("express");
 
 var app = express();
-
+/* // we don't delete all the files since this script is called second
 try
 {
   console.log(__dirname + "/tmp/unwarp");
@@ -14,7 +14,7 @@ try
 }
 catch(ex){
 
-}
+}*/
 
 //create files
 var exist = fs.existsSync(__dirname + "/tmp");
@@ -54,8 +54,8 @@ var j = 0;
 
 function saveJPG()
 {
-    // this is the panorama
-    var server = http.get("http://192.168.1.106:8080/shot.jpg", function(res){
+    // this is the front cam
+    var server2 = http.get("http://192.168.1.104:8080/shot.jpg", function(res){
         //console.log("make request");
         var data = new Buffer(0);
         res.on('data', function(chunk){
@@ -65,28 +65,28 @@ function saveJPG()
         res.on('error',function(e){console.error(e)})
 
         res.on('end', function(){
-            fs.writeFile(__dirname + "/tmp/unwarp/image" + NumString(i) + ".jpeg", data);
+            fs.writeFile(__dirname + "/tmp/front/image" + NumString(j) + ".jpeg", data);
 
-            if(i%100 == 0)
+            if(j%100 == 0)
             {
-                console.log("printed: " + i);
+                console.log("printed front: " + j);
             }
-            if(i > 30)
+            if(j > 30)
             {
                 try
                 {
-                  fs.unlink(__dirname + "/tmp/unwarp/image" + NumString(i - 30 - 1) + ".jpeg",function(){});
+                  fs.unlink(__dirname + "/tmp/front/image" + NumString(j - 30 - 1) + ".jpeg",function(){});
                 }
                 catch(ex)
                 {
 
                 }
             }
-            i++;
+            j++;
         })
     });    
 
-    server.on('error',function(e){console.error(e)});
+    server2.on('error',function(e){console.error(e)});
 
     setTimeout(saveJPG, RATE);
 }
@@ -137,6 +137,6 @@ function deleteFolderRecursive(path){
 };
 
 saveJPG();
-app.listen(9001);
+app.listen(9002);
 
 
