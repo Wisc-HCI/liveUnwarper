@@ -27,7 +27,7 @@ int panoramaDegrees = 360        ; // 360, 180, or 40 !
 
 
 // framerate stuff
-int currentFrameRate = 220;//180;//125;
+int currentFrameRate = 200;//180;//125;
 int currentTrackingFrameRate = 300;//205;
 list<int> rateList(200, 1);
 list<int> trackingRateList(200,1);
@@ -344,6 +344,100 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
     return;
 }
 
+float degreesOfRobotFOV = 48.0;
+float y = 5.0;//3.0;
+float zDist = 0;
+
+float periphEdgeX = 15.86;
+float frontWidth = 5.4;
+float frontHeight = 8.4;
+
+void displayAll()
+{
+    GLfloat aspect = (GLfloat) win.width / win.height;
+	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);
+    
+    gluLookAt(0.0, 0.0, 5.00,     // eye is at (0,0,5)
+              0.0, 0.0, 0.0,      // center is at (0,0,0)
+              0.0, 1.0, 0.0);     // up is in positive Y direction
+    
+    glMatrixMode(GL_PROJECTION);
+    
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glLoadIdentity();
+    
+    
+    GLuint frontTex = matToTexture(theFront, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
+    
+    // front display
+    glBindTexture(GL_TEXTURE_2D, frontTex);
+    glBegin(GL_QUADS);
+    
+    glTexCoord2f(0.0,0.0);
+    glVertex3f(-frontWidth,frontHeight,zDist);
+    
+    glTexCoord2f(1.0,0.0);
+    glVertex3f(frontWidth,frontHeight,zDist);
+    glTexCoord2f(1.0,1.0);
+    glVertex3f(frontWidth,-frontHeight,zDist);
+    
+    glTexCoord2f(0.0,1.0);
+    glVertex3f(-frontWidth,-frontHeight,zDist);
+    
+    glEnd();
+    
+    
+    // convert to texture
+	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 33);
+    
+    if(panoramaDegrees != 40)
+    {
+    // bind texture
+	glBindTexture(GL_TEXTURE_2D, tex);
+    
+    glBegin(GL_QUAD_STRIP);
+    
+    float leftXCoord = 1-(((panoramaDegrees/2.0)/360.0) + .5);
+    float rightXCoord = (-degreesOfRobotFOV/720.0 + .5);
+    
+    //cout << leftXCoord << " " << rightXCoord << endl;
+    
+    glTexCoord2f(leftXCoord,0.0);
+    glVertex3f(-periphEdgeX,y,zDist);
+    glTexCoord2f(leftXCoord,1.0);
+    glVertex3f(-periphEdgeX,-y,zDist);
+    glTexCoord2f(rightXCoord, 0.0);
+    glVertex3f(-frontWidth,y,zDist);
+    glTexCoord2f(rightXCoord, 1.0);
+    glVertex3f(-frontWidth,-y,zDist);
+    
+    glEnd();
+    
+    glBegin(GL_QUAD_STRIP);
+    
+    leftXCoord = (degreesOfRobotFOV/720.0 + .5);
+    rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
+    
+    //cout << leftXCoord << " " << rightXCoord << endl;
+    
+    glTexCoord2f(leftXCoord,0.0);
+    glVertex3f(frontWidth,y,zDist);
+    glTexCoord2f(leftXCoord,1.0);
+    glVertex3f(frontWidth,-y,zDist);
+    glTexCoord2f(rightXCoord, 0.0);
+    glVertex3f(periphEdgeX,y,zDist);
+    glTexCoord2f(rightXCoord, 1.0);
+    glVertex3f(periphEdgeX,-y,zDist);
+    
+    glEnd();
+    }
+    // free the texture memory
+    glDeleteTextures(1, &tex);
+    glDeleteTextures(1, &frontTex);
+    
+    glutSwapBuffers();
+}
+
 void setFrameCount()
 {
     while(!frame.data) // go until we find the first valid image file so we know where to start the framecount
@@ -368,6 +462,19 @@ void setFrontFrameCount()
 
 void setup()
 {
+    if(!(panoramaDegrees == 360 || panoramaDegrees == 180 || panoramaDegrees == 40))
+    {
+        // invalid condition
+        cout << "please select a valid study condition: 360, 180, or 40" << endl;
+        exit(0);
+    }
+    else
+    {
+        if(panoramaDegrees == 180)
+        {
+            periphEdgeX = ((periphEdgeX - frontWidth)/2.0) + frontWidth;
+        }
+    }
     // TODO ::: uncomment below for actual running, this kills chrome and node
     // run video grabber
     system("killall node");
@@ -377,7 +484,8 @@ void setup()
     sleep(3);
     
     // run chrome
-    //system("killall -9 \"Google Chrome\"");
+    system("killall -9 \"Google Chrome\"");
+    system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,1300 --window-size=2560,140 &");
     //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=0,288 --window-size=2560,1127 &");
     //system("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --app=http://drive.doublerobotics.com --user-data-dir=~/Library/Application\\ Support/Google/Chrome/Default/ --window-position=607,24 --window-size=1346,1415 &");
     
@@ -397,7 +505,7 @@ void setup()
     cout << "set it again! " << frontFrameCount << endl;
     
     setFrameRate(currentFrameRate, 9001);
-    setFrameRate(currentFrameRate - 60, 9002);
+    setFrameRate(currentFrameRate - 30, 9002);
     
     // read in the template file
     templ = imread(templateFileName);
@@ -406,98 +514,6 @@ void setup()
         cout << "failed to read template file." << endl;
         exit(-1);
     }
-}
-
-float degreesOfRobotFOV = 40.0;
-float x = 3.7;
-float y = 3.0;//5.0;
-float zDist = 0;
-float labelHeight = 1.0;
-
-void displayAll()
-{
-    GLfloat aspect = (GLfloat) win.width / win.height;
-	gluPerspective(win.field_of_view_angle, aspect, win.z_near, win.z_far);
-    
-    gluLookAt(0.0, 0.0, 5.00,     // eye is at (0,0,5)
-              0.0, 0.0, 0.0,      // center is at (0,0,0)
-              0.0, 1.0, 0.0);     // up is in positive Y direction
-    
-    glMatrixMode(GL_PROJECTION);
-    
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLoadIdentity();
-    
-    // convert to texture
-	GLuint tex = matToTexture(thePanorama, GL_NEAREST, GL_NEAREST, GL_CLAMP, 33);
-    
-    // bind texture
-	glBindTexture(GL_TEXTURE_2D, tex);
-    
-    glBegin(GL_QUAD_STRIP);
-    
-    float leftXCoord = 1-(((panoramaDegrees/2.0)/360.0) + .5);
-    float rightXCoord = (-degreesOfRobotFOV/720.0 + .5);
-    
-    //cout << leftXCoord << " " << rightXCoord << endl;
-    
-    glTexCoord2f(leftXCoord,0.0);
-    glVertex3f(-x-10,y,zDist);
-    glTexCoord2f(leftXCoord,1.0);
-    glVertex3f(-x-10,-y,zDist);
-    glTexCoord2f(rightXCoord, 0.0);
-    glVertex3f(x-10,y,zDist);
-    glTexCoord2f(rightXCoord, 1.0);
-    glVertex3f(x-10,-y,zDist);
-    
-    glEnd();
-    
-    glBegin(GL_QUAD_STRIP);
-    
-    leftXCoord = (degreesOfRobotFOV/720.0 + .5);
-    rightXCoord = ((panoramaDegrees/2.0)/360.0) + .5;
-    
-    //cout << leftXCoord << " " << rightXCoord << endl;
-    
-    glTexCoord2f(leftXCoord,0.0);
-    glVertex3f(-x+10,y,zDist);
-    glTexCoord2f(leftXCoord,1.0);
-    glVertex3f(-x+10,-y,zDist);
-    glTexCoord2f(rightXCoord, 0.0);
-    glVertex3f(x+10,y,zDist);
-    glTexCoord2f(rightXCoord, 1.0);
-    glVertex3f(x+10,-y,zDist);
-    
-    glEnd();
-    
-    
-    GLuint frontTex = matToTexture(theFront, GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_BORDER, 31);
-    
-    // front display
-    glBindTexture(GL_TEXTURE_2D, frontTex);
-    glBegin(GL_QUADS);
-    
-    double frontWidth = 5.5;
-    double frontHeight = 8.4;
-    
-    glTexCoord2f(0.0,0.0);
-    glVertex3f(-frontWidth,frontHeight,zDist);
-    
-    glTexCoord2f(1.0,0.0);
-    glVertex3f(frontWidth,frontHeight,zDist);
-    glTexCoord2f(1.0,1.0);
-    glVertex3f(frontWidth,-frontHeight,zDist);
-    
-    glTexCoord2f(0.0,1.0);
-    glVertex3f(-frontWidth,-frontHeight,zDist);
-    
-    glEnd();
-    
-    // free the texture memory
-    glDeleteTextures(1, &tex);
-    glDeleteTextures(1, &frontTex);
-    
-    glutSwapBuffers();
 }
 
 #define KEY_ESCAPE 27
