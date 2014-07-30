@@ -40,8 +40,10 @@ int actualCounter = 0;
 //int radiusInner = 90, radiusOuter = 400; // 1920x1080 ipWebcam
 int radiusInner = 50, radiusOuter = 190; // 1024x768 ipWebcam
 
-string templateFileName = "template960.jpg";
-//string templateFileName = "template1024.jpg";
+// TODO tmp
+string templateFileName = "/Users/hcilab/Documents/Steve/PanoramicStudy/liveUnwarper/liveUnwarper/template960.jpg";
+//string templateFileName = "template960.jpg";
+
 
 //int unwarpedW = 1300, unwarpedH = 240;
 int unwarpedW = 1440, unwarpedH = 240;
@@ -51,7 +53,9 @@ int unwarpedW = 1440, unwarpedH = 240;
 Mat thePanorama;
 Mat theFront;
 
-string frameRateCommand = "python ../scripts/frameRateChanger.py ";
+// TODO tmp
+string frameRateCommand = "python /Users/hcilab/Documents/Steve/PanoramicStudy/liveUnwarper/scripts/frameRateChanger.py ";
+//string frameRateCommand = "python ../scripts/frameRateChanger.py ";
 
 const double PI = 3.1415926535897932384626;
 
@@ -78,7 +82,11 @@ int remapCenterY;
 
 //string pathToVideoImages = "/Users/steven/Documents/madison/panoramic/steveB/tmp/";
 //string pathToVideoImages = "/Users/steven/dev/liveUnwarper/scripts/tmp/";
-string pathToVideoImages = "../scripts/tmp/";
+
+
+//TODO ::: tmp
+//string pathToVideoImages = "../scripts/tmp/";
+string pathToVideoImages = "/Users/hcilab/Documents/Steve/PanoramicStudy/liveUnwarper/scripts/tmp/";
 
 string filepreamble = pathToVideoImages + "unwarp/image";
 string frontfilepreamble = pathToVideoImages + "front/image";
@@ -478,8 +486,13 @@ void setup()
     // TODO ::: uncomment below for actual running, this kills chrome and node
     // run video grabber
     system("killall node");
-    system("/usr/local/bin/node ../scripts/panoServer.js &");
-    system("/usr/local/bin/node ../scripts/frontServer.js &");
+    //system("/usr/local/bin/node ../scripts/panoServer.js &");
+    //system("/usr/local/bin/node ../scripts/frontServer.js &");
+    
+    system("/usr/local/bin/node /Users/hcilab/Documents/Steve/PanoramicStudy/liveUnwarper/scripts/panoServer.js &");
+    system("/usr/local/bin/node /Users/hcilab/Documents/Steve/PanoramicStudy/liveUnwarper/scripts/frontServer.js &");
+    
+    
     
     sleep(3);
     
