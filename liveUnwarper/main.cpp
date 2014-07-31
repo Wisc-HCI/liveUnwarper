@@ -20,7 +20,7 @@ using namespace cv;
 
 
 //###########################################################
-int panoramaDegrees = 360        ; // 360, 180, or 40 !
+int panoramaDegrees = 180        ; // 360, 180, or 40 !
 //###########################################################
 
 
@@ -353,12 +353,14 @@ void estimateCenterSteve(int *cx, int*cy, Mat img_display)
 }
 
 float degreesOfRobotFOV = 48.0;
-float y = 5.0;//3.0;
+float y = 4.5;//3.0;
 float zDist = 0;
 
 float periphEdgeX = 15.86;
-float frontWidth = 5.4;
-float frontHeight = 8.4;
+float frontWidth = 3.2; //5.4;
+float frontHeight = 4.5; // 8.4;
+
+bool makeHeightSame = true;
 
 void displayAll()
 {
@@ -409,14 +411,22 @@ void displayAll()
     float rightXCoord = (-degreesOfRobotFOV/720.0 + .5);
     
     //cout << leftXCoord << " " << rightXCoord << endl;
+        
+    float top = 0.0, bottom = 1.0;
+        
+        if(makeHeightSame)
+        {
+            top = .15;
+            bottom = .95;
+        }
     
-    glTexCoord2f(leftXCoord,0.0);
+    glTexCoord2f(leftXCoord,top);
     glVertex3f(-periphEdgeX,y,zDist);
-    glTexCoord2f(leftXCoord,1.0);
+    glTexCoord2f(leftXCoord,bottom);
     glVertex3f(-periphEdgeX,-y,zDist);
-    glTexCoord2f(rightXCoord, 0.0);
+    glTexCoord2f(rightXCoord, top);
     glVertex3f(-frontWidth,y,zDist);
-    glTexCoord2f(rightXCoord, 1.0);
+    glTexCoord2f(rightXCoord, bottom);
     glVertex3f(-frontWidth,-y,zDist);
     
     glEnd();
@@ -428,13 +438,13 @@ void displayAll()
     
     //cout << leftXCoord << " " << rightXCoord << endl;
     
-    glTexCoord2f(leftXCoord,0.0);
+    glTexCoord2f(leftXCoord,top);
     glVertex3f(frontWidth,y,zDist);
-    glTexCoord2f(leftXCoord,1.0);
+    glTexCoord2f(leftXCoord,bottom);
     glVertex3f(frontWidth,-y,zDist);
-    glTexCoord2f(rightXCoord, 0.0);
+    glTexCoord2f(rightXCoord, top);
     glVertex3f(periphEdgeX,y,zDist);
-    glTexCoord2f(rightXCoord, 1.0);
+    glTexCoord2f(rightXCoord, bottom);
     glVertex3f(periphEdgeX,-y,zDist);
     
     glEnd();
